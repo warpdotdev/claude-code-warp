@@ -17,7 +17,8 @@ MSG="Task completed"
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     # Get the first user prompt
     PROMPT=$(jq -rs '
-        [.[] | select(.type == "user")] | first | .message.content // empty
+        [.[] | select(.type == "user")] | first |
+        [.message.content[] | select(.type == "text") | .text] | join(" ")
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
     
     # Get the last assistant response
