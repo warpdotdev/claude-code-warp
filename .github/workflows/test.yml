@@ -1,0 +1,22 @@
+name: Plugin Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  plugin-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        # Auto-discovers and runs all test-*.sh scripts under any tests/ directory.
+        # To add a new test, just drop a test-*.sh file in a tests/ folder.
+        run: |
+          shopt -s globstar nullglob
+          failed=0
+          for f in **/tests/test-*.sh; do
+            echo "--- $f ---"
+            bash "$f" || failed=1
+          done
+          exit $failed
