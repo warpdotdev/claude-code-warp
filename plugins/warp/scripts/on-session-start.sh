@@ -5,7 +5,7 @@
 if ! command -v jq &>/dev/null; then
     cat << 'EOF'
 {
-  "systemMessage": "⚠️  Warp notifications require jq — install it with: brew install jq"
+  "systemMessage": "⚠️  Warp notifications require jq — install it with your system package manager (e.g. brew install jq, apt install jq)"
 }
 EOF
     exit 0
