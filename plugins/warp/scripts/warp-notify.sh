@@ -17,5 +17,19 @@ TITLE="${1:-Notification}"
 BODY="${2:-}"
 
 # OSC 777 format: \033]777;notify;<title>;<body>\007
-# Write directly to /dev/tty to ensure it reaches the terminal
-printf '\033]777;notify;%s;%s\007' "$TITLE" "$BODY" > /dev/tty 2>/dev/null || true
+# Hook subprocesses spawned by Claude Code may lack a controlling terminal,
+# so /dev/tty is unavailable. Walk the parent process chain to find the actual
+# TTY device and write there instead.
+TTY_DEVICE=""
+current_pid=$PPID
+for _ in 1 2 3 4 5; do
+    t=$(ps -o tty= -p "$current_pid" 2>/dev/null | tr -d ' ')
+    if [ -n "$t" ] && [ "$t" != "??" ]; then
+        TTY_DEVICE="/dev/$t"
+        break
+    fi
+    current_pid=$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d ' ')
+    [ -z "$current_pid" ] && break
+done
+
+printf '\033]777;notify;%s;%s\007' "$TITLE" "$BODY" > "${TTY_DEVICE:-/dev/tty}" 2>/dev/null || true
