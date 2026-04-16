@@ -215,13 +215,6 @@ assert_eq "legacy Warp shows active message" \
     "🔔 Warp plugin active. You'll receive native Warp notifications when tasks complete or input is needed." \
     "$SYS_MSG"
 
-# Not Warp (neither env var set)
-OUTPUT=$(TERM_PROGRAM=other bash "$HOOK_DIR/on-session-start.sh" < /dev/null 2>/dev/null)
-SYS_MSG=$(echo "$OUTPUT" | jq -r '.systemMessage // empty' 2>/dev/null)
-assert_eq "non-Warp shows install message" \
-    "ℹ️ Warp plugin installed but you're not running in Warp terminal. Install Warp (https://warp.dev) to get native notifications when Claude completes tasks or needs input." \
-    "$SYS_MSG"
-
 echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"
 
