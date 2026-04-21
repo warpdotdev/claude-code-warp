@@ -1,8 +1,13 @@
 #!/bin/bash
-# Hook script for Claude Code PermissionRequest event
-# Sends a structured Warp notification when Claude needs permission to run a tool.
+# Hook script for Claude Code PermissionDenied event
+# Fires when the auto-mode classifier silently denies a tool call. Without this
+# hook, any prior permission_request that the classifier then denies leaves the
+# sidebar stuck on "blocked-awaiting-permission" until the next Stop.
 #
-# https://docs.anthropic.com/en/docs/claude-code/hooks#permissionrequest-input
+# Only fires in auto mode (--dangerously-skip-permissions,
+# --permission-mode auto, etc). Manual denials do not fire this event.
+#
+# https://docs.anthropic.com/en/docs/claude-code/hooks#permissiondenied-input
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"
@@ -18,10 +23,12 @@ INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"' 2>/dev/null)
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
 [ -z "$TOOL_INPUT" ] && TOOL_INPUT='{}'
+REASON=$(echo "$INPUT" | jq -r '.reason // "denied by auto mode classifier"' 2>/dev/null)
 
-# Build a human-readable summary from the tool's most visible field.
+# Mirror the permission_request summary format so the sidebar renders
+# consistently — "Auto-denied Bash: rm -rf /tmp".
 TOOL_PREVIEW=$(echo "$INPUT" | jq -r '(.tool_input | if .command then .command elif .file_path then .file_path elif .url then .url elif .query then .query elif .pattern then .pattern else (tostring | .[0:80]) end) // ""' 2>/dev/null)
-SUMMARY="Wants to run $TOOL_NAME"
+SUMMARY="Auto-denied $TOOL_NAME"
 if [ -n "$TOOL_PREVIEW" ]; then
     if [ ${#TOOL_PREVIEW} -gt 120 ]; then
         TOOL_PREVIEW="${TOOL_PREVIEW:0:117}..."
@@ -29,12 +36,10 @@ if [ -n "$TOOL_PREVIEW" ]; then
     SUMMARY="$SUMMARY: $TOOL_PREVIEW"
 fi
 
-PERMISSION_MODE=$(echo "$INPUT" | jq -r '.permission_mode // empty' 2>/dev/null)
-
-BODY=$(build_payload "$INPUT" "permission_request" \
+BODY=$(build_payload "$INPUT" "permission_denied" \
     --arg summary "$SUMMARY" \
     --arg tool_name "$TOOL_NAME" \
     --argjson tool_input "$TOOL_INPUT" \
-    --arg permission_mode "$PERMISSION_MODE")
+    --arg reason "$REASON")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
