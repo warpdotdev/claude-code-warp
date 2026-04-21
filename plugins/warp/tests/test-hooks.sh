@@ -218,10 +218,177 @@ assert_eq "legacy Warp shows active message" \
 echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"
 
-for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+unset WARP_CLIENT_VERSION
+for HOOK in \
+    on-permission-request.sh \
+    on-permission-denied.sh \
+    on-prompt-submit.sh \
+    on-post-tool-use.sh \
+    on-post-tool-use-failure.sh \
+    on-session-end.sh \
+    on-stop-failure.sh \
+    on-subagent-start.sh \
+    on-subagent-stop.sh \
+    on-pre-compact.sh \
+    on-post-compact.sh \
+    on-cwd-changed.sh \
+    on-elicitation.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
+
+# --- New event payload shapes ---
+# Each new event is tested through build_payload (the shared JSON construction
+# layer all hook scripts use) since hook scripts themselves write to /dev/tty.
+
+echo ""
+echo "=== new event payloads ==="
+
+echo ""
+echo "--- session_start enriches with source/model/permission_mode ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "session_start" \
+    --arg plugin_version "3.0.0" \
+    --arg source "resume" \
+    --arg model "claude-sonnet-4-6" \
+    --arg permission_mode "acceptEdits" \
+    --arg agent_type "")
+assert_json_field "session_start event name" "$PAYLOAD" ".event" "session_start"
+assert_json_field "plugin_version present" "$PAYLOAD" ".plugin_version" "3.0.0"
+assert_json_field "source present" "$PAYLOAD" ".source" "resume"
+assert_json_field "model present" "$PAYLOAD" ".model" "claude-sonnet-4-6"
+assert_json_field "permission_mode present" "$PAYLOAD" ".permission_mode" "acceptEdits"
+
+echo ""
+echo "--- session_end with reason ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "session_end" \
+    --arg reason "clear")
+assert_json_field "session_end event name" "$PAYLOAD" ".event" "session_end"
+assert_json_field "reason present" "$PAYLOAD" ".reason" "clear"
+
+echo ""
+echo "--- stop with error (StopFailure mapping) ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "stop" \
+    --arg query "refactor auth" \
+    --arg response "API Error: Rate limit reached" \
+    --arg error "rate_limit" \
+    --arg error_details "429 Too Many Requests" \
+    --arg transcript_path "")
+assert_json_field "stop event name for failures" "$PAYLOAD" ".event" "stop"
+assert_json_field "error field present" "$PAYLOAD" ".error" "rate_limit"
+assert_json_field "error_details present" "$PAYLOAD" ".error_details" "429 Too Many Requests"
+assert_json_field "response holds error text" "$PAYLOAD" ".response" "API Error: Rate limit reached"
+
+echo ""
+echo "--- permission_denied ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "permission_denied" \
+    --arg summary "Auto-denied Bash: rm -rf /" \
+    --arg tool_name "Bash" \
+    --argjson tool_input '{"command":"rm -rf /"}' \
+    --arg reason "command targets a path outside the project")
+assert_json_field "permission_denied event name" "$PAYLOAD" ".event" "permission_denied"
+assert_json_field "summary present" "$PAYLOAD" ".summary" "Auto-denied Bash: rm -rf /"
+assert_json_field "reason present" "$PAYLOAD" ".reason" "command targets a path outside the project"
+assert_json_field "tool_input preserved" "$PAYLOAD" ".tool_input.command" "rm -rf /"
+
+echo ""
+echo "--- tool_failed ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "tool_failed" \
+    --arg tool_name "Bash" \
+    --arg error "Command exited with non-zero status code 1" \
+    --arg tool_preview "npm test" \
+    --argjson is_interrupt false)
+assert_json_field "tool_failed event name" "$PAYLOAD" ".event" "tool_failed"
+assert_json_field "tool_name present" "$PAYLOAD" ".tool_name" "Bash"
+assert_json_field "error present" "$PAYLOAD" ".error" "Command exited with non-zero status code 1"
+assert_json_field "tool_preview present" "$PAYLOAD" ".tool_preview" "npm test"
+assert_json_field "is_interrupt is bool" "$PAYLOAD" ".is_interrupt" "false"
+
+echo ""
+echo "--- subagent_start ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "subagent_start" \
+    --arg agent_id "agent-abc123" \
+    --arg agent_type "Explore")
+assert_json_field "subagent_start event name" "$PAYLOAD" ".event" "subagent_start"
+assert_json_field "agent_id present" "$PAYLOAD" ".agent_id" "agent-abc123"
+assert_json_field "agent_type present" "$PAYLOAD" ".agent_type" "Explore"
+
+echo ""
+echo "--- subagent_stop with response ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "subagent_stop" \
+    --arg agent_id "agent-abc123" \
+    --arg agent_type "Explore" \
+    --arg response "Found 3 potential issues" \
+    --arg transcript_path "/tmp/subagent.jsonl")
+assert_json_field "subagent_stop event name" "$PAYLOAD" ".event" "subagent_stop"
+assert_json_field "response present" "$PAYLOAD" ".response" "Found 3 potential issues"
+assert_json_field "agent_type present" "$PAYLOAD" ".agent_type" "Explore"
+
+echo ""
+echo "--- compact_start / compact_end ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "compact_start" \
+    --arg trigger "auto")
+assert_json_field "compact_start event name" "$PAYLOAD" ".event" "compact_start"
+assert_json_field "trigger present" "$PAYLOAD" ".trigger" "auto"
+
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "compact_end" \
+    --arg trigger "manual")
+assert_json_field "compact_end event name" "$PAYLOAD" ".event" "compact_end"
+
+echo ""
+echo "--- cwd_changed uses envelope cwd ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/new/project/path"}' "cwd_changed")
+assert_json_field "cwd_changed event name" "$PAYLOAD" ".event" "cwd_changed"
+assert_json_field "cwd reflects new dir" "$PAYLOAD" ".cwd" "/new/project/path"
+assert_json_field "project is new basename" "$PAYLOAD" ".project" "path"
+
+echo ""
+echo "--- question_asked (MCP elicitation) ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "question_asked" \
+    --arg tool_name "github-server" \
+    --arg summary "Which repo should I search?")
+assert_json_field "question_asked event name" "$PAYLOAD" ".event" "question_asked"
+assert_json_field "tool_name holds server name" "$PAYLOAD" ".tool_name" "github-server"
+assert_json_field "summary present" "$PAYLOAD" ".summary" "Which repo should I search?"
+
+# --- Temp-file prompt persistence ---
+# The on-prompt-submit → on-stop handoff goes through a session-scoped temp file.
+# Verify the file is created and consumed correctly.
+
+echo ""
+echo "=== temp-file prompt persistence ==="
+
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+export WARP_CLIENT_VERSION="v0.2099.12.31.23.59.stable_99"
+
+TEST_SESSION="test-session-$$"
+TEST_TMP="${TMPDIR:-/tmp}/warp-claude-${TEST_SESSION}.query"
+rm -f "$TEST_TMP"
+
+# on-prompt-submit should write the full prompt to the temp file
+INPUT=$(jq -nc --arg sid "$TEST_SESSION" '{session_id:$sid,cwd:"/tmp/proj",prompt:"refactor the auth module"}')
+echo "$INPUT" | bash "$HOOK_DIR/on-prompt-submit.sh" 2>/dev/null >/dev/null
+
+if [ -f "$TEST_TMP" ]; then
+    CONTENT=$(cat "$TEST_TMP")
+    assert_eq "on-prompt-submit writes query file" "refactor the auth module" "$CONTENT"
+else
+    assert_eq "on-prompt-submit writes query file" "refactor the auth module" "<no file created>"
+fi
+
+# on-session-end should clean up the temp file
+INPUT=$(jq -nc --arg sid "$TEST_SESSION" '{session_id:$sid,cwd:"/tmp/proj",reason:"clear"}')
+echo "$INPUT" | bash "$HOOK_DIR/on-session-end.sh" 2>/dev/null >/dev/null
+
+if [ ! -f "$TEST_TMP" ]; then
+    assert_eq "on-session-end cleans up query file" "cleaned" "cleaned"
+else
+    assert_eq "on-session-end cleans up query file" "cleaned" "still present"
+    rm -f "$TEST_TMP"
+fi
+
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+unset WARP_CLIENT_VERSION
 
 # --- Summary ---
 

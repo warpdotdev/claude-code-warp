@@ -1,23 +1,104 @@
 {
-  "description": "Warp terminal notifications",
+  "description": "Warp terminal notifications — complete Claude Code hook lifecycle coverage",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-session-start.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-session-start.sh",
+            "timeout": 5
           }
         ]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-session-end.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-prompt-submit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-permission-request.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-permission-denied.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-post-tool-use.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-post-tool-use-failure.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-subagent-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-subagent-stop.sh",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -28,37 +109,76 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-notification.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-notification.sh",
+            "timeout": 5
           }
         ]
       }
     ],
-    "PermissionRequest": [
+    "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-permission-request.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.sh",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "StopFailure": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-prompt-submit.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-stop-failure.sh",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
     ],
-    "PostToolUse": [
+    "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-post-tool-use.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-pre-compact.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-post-compact.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-cwd-changed.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-elicitation.sh",
+            "timeout": 5
           }
         ]
       }
