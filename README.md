@@ -117,7 +117,7 @@ Notifications work out of the box. To customize Warp's notification behavior (so
 The plugin version in `plugins/warp/.claude-plugin/plugin.json` is checked by the Warp client to detect outdated installations.
 When bumping the version here, also update `MINIMUM_PLUGIN_VERSION` in the Warp client.
 
-Plugin v3.0.0 adds new Warp events (`session_end`, `permission_denied`, `tool_failed`, `subagent_start`, `subagent_stop`, `compact_start`, `compact_end`, `cwd_changed`). Warp clients that don't know these events should silently ignore them; v3-aware clients render them as first-class sidebar states. The adapter continues to emit the existing six events for backward compatibility.
+Plugin v2.0.1 adds new Warp events (`session_end`, `permission_denied`, `tool_failed`, `subagent_start`, `subagent_stop`, `compact_start`, `compact_end`, `cwd_changed`) on top of v2.0.0's six-event baseline. Warp clients that don't know these events should silently ignore them; newer clients render them as first-class sidebar states. All existing v2.0.0 events are emitted unchanged — this is a backward-compatible patch.
 
 ## License
 

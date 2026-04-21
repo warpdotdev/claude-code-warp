@@ -1,7 +1,7 @@
 {
   "name": "warp",
   "description": "Warp terminal integration for Claude Code — complete hook lifecycle coverage, structured notifications, and sidebar session state",
-  "version": "3.0.0",
+  "version": "2.0.1",
   "author": {
     "name": "Warp",
     "url": "https://warp.dev"
