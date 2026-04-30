@@ -223,6 +223,26 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "--- CLAUDE_CODE_DISABLE_TERMINAL_TITLE omits query field ---"
+
+# Set up structured mode for the hook scripts
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+export WARP_CLIENT_VERSION="v0.2026.04.01.08.00.stable_00"
+
+PAYLOAD=$(bash "$HOOK_DIR/on-prompt-submit.sh" <<< '{"session_id":"s1","cwd":"/tmp/proj","prompt":"hello world"}' 2>/dev/null || true)
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj","prompt":"hello world"}' "prompt_submit" \
+    --arg query "hello world")
+assert_json_field "query present without env var" "$PAYLOAD" ".query" "hello world"
+
+# With env var set, query should be omitted from the payload
+CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj","prompt":"hello world"}' "prompt_submit")
+assert_json_field "query absent with CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1" "$PAYLOAD" ".query" "null"
+assert_json_field "event still present with env var" "$PAYLOAD" ".event" "prompt_submit"
+
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+unset WARP_CLIENT_VERSION
+
 # --- Summary ---
 
 echo ""
