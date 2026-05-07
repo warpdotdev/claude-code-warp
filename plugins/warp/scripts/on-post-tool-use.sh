@@ -24,4 +24,6 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 BODY=$(build_payload "$INPUT" "tool_complete" \
     --arg tool_name "$TOOL_NAME")
 
-"$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
+# Inline the OSC 777 write — avoids spawning warp-notify.sh subprocess
+# which would re-source should-use-structured.sh and re-run the gate check.
+printf '\033]777;notify;%s;%s\007' "warp://cli-agent" "$BODY" > /dev/tty 2>/dev/null || true
