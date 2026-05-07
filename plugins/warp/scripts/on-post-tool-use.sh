@@ -3,10 +3,13 @@
 # Sends a structured Warp notification after a tool call completes,
 # transitioning the session status from Blocked back to Running.
 
+# Fast-path: skip immediately in non-Warp environments (subagents, CI, other terminals)
+[ -z "${WARP_CLI_AGENT_PROTOCOL_VERSION:-}" ] && exit 0
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"
 
-# No legacy equivalent for this hook
+# Full version gate for broken Warp builds
 if ! should_use_structured; then
     exit 0
 fi
