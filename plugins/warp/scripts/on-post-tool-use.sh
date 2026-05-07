@@ -14,15 +14,17 @@ if ! should_use_structured; then
     exit 0
 fi
 
-source "$SCRIPT_DIR/build-payload.sh"
+# Negotiate protocol version: min(plugin_current=1, warp_declared)
+PROTOCOL_VERSION="${WARP_CLI_AGENT_PROTOCOL_VERSION:-1}"
+[ "$PROTOCOL_VERSION" -gt 1 ] 2>/dev/null && PROTOCOL_VERSION=1
 
-# Read hook input from stdin
-INPUT=$(cat)
-
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
-
-BODY=$(build_payload "$INPUT" "tool_complete" \
-    --arg tool_name "$TOOL_NAME")
+# Single jq call: read stdin, extract fields, build payload in one pass
+BODY=$(jq -nc \
+    --argjson v "$PROTOCOL_VERSION" \
+    --arg agent "claude" \
+    --arg event "tool_complete" \
+    '{v:$v, agent:$agent, event:$event}
+     + (input | {session_id: (.session_id // ""), cwd: (.cwd // ""), project: ((.cwd // "") | split("/") | last // ""), tool_name: (.tool_name // "")})')
 
 # Inline the OSC 777 write — avoids spawning warp-notify.sh subprocess
 # which would re-source should-use-structured.sh and re-run the gate check.
