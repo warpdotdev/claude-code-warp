@@ -26,6 +26,6 @@ BODY=$(jq -nc \
     '{v:$v, agent:$agent, event:$event}
      + (input | {session_id: (.session_id // ""), cwd: (.cwd // ""), project: ((.cwd // "") | split("/") | last // ""), tool_name: (.tool_name // "")})')
 
-# Inline the OSC 777 write — avoids spawning warp-notify.sh subprocess
-# which would re-source should-use-structured.sh and re-run the gate check.
-printf '\033]777;notify;%s;%s\007' "warp://cli-agent" "$BODY" > /dev/tty 2>/dev/null || true
+# Non-blocking tty write: background to avoid stalling on PTY congestion
+# during heavy terminal render (eliminates 2s+ spikes under load).
+printf '\033]777;notify;%s;%s\007' "warp://cli-agent" "$BODY" > /dev/tty 2>/dev/null &
