@@ -294,13 +294,14 @@ done
 run_hook_capture() {
     local hook="$1"
     local input="$2"
-    local tmpfile
+    local tmpfile inputfile
     tmpfile=$(mktemp)
-    script -q "$tmpfile" bash -c "echo '$input' | bash \"$HOOK_DIR/$hook\"; sleep 0.1" >/dev/null 2>&1
-    # Extract JSON payload from OSC 777 sequence
+    inputfile=$(mktemp)
+    printf '%s' "$input" > "$inputfile"
+    script -q "$tmpfile" bash -c "bash \"$HOOK_DIR/$hook\" < \"$inputfile\"; wait; sleep 0.2" >/dev/null 2>&1
     local payload
     payload=$(tr -d '\r' < "$tmpfile" | grep -o '{[^}]*}' | tail -1)
-    rm -f "$tmpfile"
+    rm -f "$tmpfile" "$inputfile"
     echo "$payload"
 }
 
@@ -320,6 +321,11 @@ assert_json_field "session_id extracted" "$PAYLOAD" ".session_id" "sess-456"
 assert_json_field "cwd extracted" "$PAYLOAD" ".cwd" "/Users/alice/my-project"
 assert_json_field "project is basename of cwd" "$PAYLOAD" ".project" "my-project"
 assert_json_field "tool_name extracted" "$PAYLOAD" ".tool_name" "Read"
+
+echo ""
+echo "--- Trailing slash in cwd ---"
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Read","session_id":"s1","cwd":"/Users/alice/project/"}')
+assert_json_field "trailing slash stripped for project" "$PAYLOAD" ".project" "project"
 
 echo ""
 echo "--- Missing fields produce empty strings ---"

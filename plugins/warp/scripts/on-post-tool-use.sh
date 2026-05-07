@@ -16,12 +16,13 @@ PROTOCOL_VERSION="${WARP_CLI_AGENT_PROTOCOL_VERSION:-1}"
 [[ "$PROTOCOL_VERSION" =~ ^[0-9]+$ ]] || PROTOCOL_VERSION=1
 [ "$PROTOCOL_VERSION" -gt 1 ] && PROTOCOL_VERSION=1
 
-# Single jq invocation: reads hook stdin directly, builds entire payload
 BODY=$(jq -nc \
     --argjson v "$PROTOCOL_VERSION" \
     --arg agent "claude" \
     --arg event "tool_complete" \
     '{v:$v, agent:$agent, event:$event}
-     + (input | {session_id: (.session_id // ""), cwd: (.cwd // ""), project: ((.cwd // "") | sub(".*/"; "")), tool_name: (.tool_name // "")})')
+     + (input | {session_id: (.session_id // ""), cwd: (.cwd // ""), project: ((.cwd // "") | sub("/+$"; "") | sub(".*/"; "")), tool_name: (.tool_name // "")})' 2>/dev/null) || exit 0
+
+[ -z "$BODY" ] && exit 0
 
 printf '\033]777;notify;%s;%s\007' "warp://cli-agent" "$BODY" > /dev/tty 2>/dev/null &
