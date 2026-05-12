@@ -218,7 +218,7 @@ assert_eq "legacy Warp shows active message" \
 echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"
 
-for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
+for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh on-ask-user-question.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
