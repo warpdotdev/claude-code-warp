@@ -196,6 +196,70 @@ assert_eq "newer preview version returns true" "0" "$?"
 unset WARP_CLI_AGENT_PROTOCOL_VERSION
 unset WARP_CLIENT_VERSION
 
+echo ""
+echo "=== emit-terminal-sequence.sh ==="
+
+source "$SCRIPT_DIR/../scripts/emit-terminal-sequence.sh"
+
+echo ""
+echo "--- Version comparison ---"
+_version_at_least "2.1.141" "2.1.141"
+assert_eq "equal versions" "0" "$?"
+_version_at_least "2.1.142" "2.1.141"
+assert_eq "newer patch" "0" "$?"
+_version_at_least "2.2.0" "2.1.141"
+assert_eq "newer minor" "0" "$?"
+_version_at_least "3.0.0" "2.1.141"
+assert_eq "newer major" "0" "$?"
+_version_at_least "2.1.140" "2.1.141"
+assert_eq "older patch" "1" "$?"
+_version_at_least "2.0.999" "2.1.141"
+assert_eq "older minor" "1" "$?"
+_version_at_least "1.9.999" "2.1.141"
+assert_eq "older major" "1" "$?"
+
+echo ""
+echo "--- Version parsing ---"
+assert_eq "bare version" "2.1.141" "$(_parse_cc_version '2.1.141')"
+assert_eq "prefixed with name" "2.1.141" "$(_parse_cc_version 'claude 2.1.141')"
+assert_eq "prefixed with v" "2.1.141" "$(_parse_cc_version 'Claude Code v2.1.141')"
+assert_eq "empty string" "" "$(_parse_cc_version '')"
+assert_eq "no version" "" "$(_parse_cc_version 'no version here')"
+
+echo ""
+echo "--- _supports_terminal_sequence ---"
+
+unset CLAUDE_CODE_VERSION
+_supports_terminal_sequence
+assert_eq "unset version → false" "1" "$?"
+
+export CLAUDE_CODE_VERSION="2.1.141"
+_supports_terminal_sequence
+assert_eq "exact min version → true" "0" "$?"
+
+export CLAUDE_CODE_VERSION="claude 2.1.150"
+_supports_terminal_sequence
+assert_eq "newer with prefix → true" "0" "$?"
+
+export CLAUDE_CODE_VERSION="2.1.100"
+_supports_terminal_sequence
+assert_eq "older version → false" "1" "$?"
+
+export CLAUDE_CODE_VERSION="garbage"
+_supports_terminal_sequence
+assert_eq "unparseable version → false" "1" "$?"
+
+unset CLAUDE_CODE_VERSION
+
+echo ""
+echo "--- emit_terminal_sequence output ---"
+
+# With known new version → outputs terminalSequence JSON
+export CLAUDE_CODE_VERSION="2.1.141"
+OUTPUT=$(emit_terminal_sequence "test-seq")
+assert_json_field "new CC outputs terminalSequence" "$OUTPUT" ".terminalSequence" "test-seq"
+unset CLAUDE_CODE_VERSION
+
 # --- Routing tests ---
 # These test the hook scripts as subprocesses to verify routing behavior.
 # We override /dev/tty writes since they'd fail in CI.

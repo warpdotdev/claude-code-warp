@@ -23,6 +23,17 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# Best-effort Claude Code version detection.
+# Cache in $CLAUDE_ENV_FILE so subsequent hooks can skip the lookup, and
+# export it now so the rest of this hook (warp-notify.sh below) can use it.
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -z "${CLAUDE_CODE_VERSION:-}" ]; then
+    CC_VERSION=$(claude --version 2>/dev/null | head -1 || true)
+    if [ -n "$CC_VERSION" ]; then
+        echo "export CLAUDE_CODE_VERSION=\"$CC_VERSION\"" >> "$CLAUDE_ENV_FILE"
+        export CLAUDE_CODE_VERSION="$CC_VERSION"
+    fi
+fi
+
 # Read plugin version from plugin.json
 PLUGIN_VERSION=$(jq -r '.version // "unknown"' "$SCRIPT_DIR/../.claude-plugin/plugin.json" 2>/dev/null)
 
