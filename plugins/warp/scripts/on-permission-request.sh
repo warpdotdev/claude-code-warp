@@ -37,3 +37,6 @@ BODY=$(build_payload "$INPUT" "permission_request" \
     --argjson tool_input "$TOOL_INPUT")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
+
+# Windows fallback: native toast notification (OSC 777 fails on Windows)
+[ -f "$SCRIPT_DIR/win-notify.sh" ] && "$SCRIPT_DIR/win-notify.sh" "permission_request" "$INPUT"
