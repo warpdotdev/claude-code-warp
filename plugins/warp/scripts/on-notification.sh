@@ -25,3 +25,6 @@ BODY=$(build_payload "$INPUT" "$NOTIF_TYPE" \
     --arg summary "$MSG")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
+
+# Windows fallback: native toast notification (OSC 777 fails on Windows)
+[ -f "$SCRIPT_DIR/win-notify.sh" ] && "$SCRIPT_DIR/win-notify.sh" "$NOTIF_TYPE" "$INPUT"

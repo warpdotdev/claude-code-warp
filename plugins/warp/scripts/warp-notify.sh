@@ -17,5 +17,11 @@ TITLE="${1:-Notification}"
 BODY="${2:-}"
 
 # OSC 777 format: \033]777;notify;<title>;<body>\007
-# Write directly to /dev/tty to ensure it reaches the terminal
-printf '\033]777;notify;%s;%s\007' "$TITLE" "$BODY" > /dev/tty 2>/dev/null || true
+# Try /dev/tty first (macOS/Linux). On Windows, /dev/tty fails inside
+# Claude Code's hook runner because stdio is captured. Fall back to stderr.
+if printf '\033]777;notify;%s;%s\007' "$TITLE" "$BODY" > /dev/tty 2>/dev/null; then
+    exit 0
+fi
+
+# Last resort: stderr (may not reach terminal in sandboxed hook contexts)
+printf '\033]777;notify;%s;%s\007' "$TITLE" "$BODY" >&2 2>/dev/null || true
