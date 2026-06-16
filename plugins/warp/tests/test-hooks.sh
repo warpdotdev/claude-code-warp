@@ -260,6 +260,58 @@ OUTPUT=$(emit_terminal_sequence "test-seq")
 assert_json_field "new CC outputs terminalSequence" "$OUTPUT" ".terminalSequence" "test-seq"
 unset CLAUDE_CODE_VERSION
 
+echo ""
+echo "--- _is_windows ---"
+
+# _is_windows should return 0 on Windows (MSYS/MINGW/Cygwin), 1 otherwise.
+# The test result depends on the host OS, so we assert against uname.
+_kernel="$(uname -s 2>/dev/null)"
+_is_windows
+if [[ "$_kernel" == MINGW* || "$_kernel" == MSYS* || "$_kernel" == CYGWIN* ]]; then
+    assert_eq "Windows kernel returns true" "0" "$?"
+else
+    assert_eq "non-Windows kernel returns false" "1" "$?"
+fi
+
+echo ""
+echo "--- Windows: emit_terminal_sequence skips /dev/tty ---"
+
+# On non-Windows we can't fully test the Windows branch, but we can verify
+# that when _is_windows is true (mocked), the function outputs terminalSequence JSON
+# instead of trying /dev/tty. We mock _is_windows by temporarily overriding it.
+_is_windows_orig="$(declare -f _is_windows)"
+_is_windows_mock() { return 0; }
+# Replace the function
+eval "_is_windows() { return 0; }"
+
+unset CLAUDE_CODE_VERSION
+OUTPUT=$(emit_terminal_sequence "win-test-seq" 2>&1)
+assert_json_field "Windows outputs terminalSequence JSON" "$OUTPUT" ".terminalSequence" "win-test-seq"
+
+# Also test with old CC version on Windows — should still use JSON, not /dev/tty
+export CLAUDE_CODE_VERSION="2.1.100"
+OUTPUT=$(emit_terminal_sequence "win-old-cc-seq" 2>&1)
+assert_json_field "Windows + old CC outputs terminalSequence JSON" "$OUTPUT" ".terminalSequence" "win-old-cc-seq"
+unset CLAUDE_CODE_VERSION
+
+# Restore original _is_windows
+eval "$_is_windows_orig"
+
+echo ""
+echo "--- jq guard in build-payload.sh ---"
+
+# When jq is missing, sourcing build-payload.sh should exit 1 with a clear message.
+# We set PATH to only include the bash binary's directory (no jq).
+SCRIPT_DIR_TEST="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
+_minimal_path="$(dirname "$(command -v bash)")"
+OUTPUT=$(PATH="$_minimal_path" bash -c "source '$SCRIPT_DIR_TEST/build-payload.sh'" 2>&1)
+_rc=$?
+if [ "$_rc" -ne 0 ] && echo "$OUTPUT" | grep -qi "jq"; then
+    assert_eq "build-payload.sh fails gracefully when jq missing" "0" "0"
+else
+    assert_eq "build-payload.sh fails gracefully when jq missing" "1" "0 (exit=$_rc, output=$OUTPUT)"
+fi
+
 # --- Routing tests ---
 # These test the hook scripts as subprocesses to verify routing behavior.
 # We override /dev/tty writes since they'd fail in CI.

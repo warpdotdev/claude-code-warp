@@ -13,6 +13,14 @@
 # The function extracts common fields (session_id, cwd, project) from the
 # hook's stdin JSON (passed as $1), then merges any extra jq args you pass.
 
+# Bail out early if jq is not available — every path through this script
+# requires it, and a missing jq produces confusing "command not found" errors
+# in hook output that Claude Code surfaces as hook errors.
+if ! command -v jq &>/dev/null; then
+    echo "jq is required but not found. Install it via your package manager." >&2
+    exit 1
+fi
+
 # The current protocol version this plugin knows how to produce.
 PLUGIN_CURRENT_PROTOCOL_VERSION=1
 

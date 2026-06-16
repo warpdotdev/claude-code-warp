@@ -8,9 +8,10 @@
 # write to /dev/tty instead.
 #
 # Decision tree:
-#   1. CLAUDE_CODE_VERSION known, >= 2.1.141 → emit terminalSequence JSON
-#   2. CLAUDE_CODE_VERSION known, <  2.1.141 → write /dev/tty; give up if missing
-#   3. CLAUDE_CODE_VERSION unknown            → try /dev/tty, fall back to JSON
+#   1. Windows (MSYS/MINGW/Cygwin)                 → always use terminalSequence JSON
+#   2. CLAUDE_CODE_VERSION known, >= 2.1.141       → emit terminalSequence JSON
+#   3. CLAUDE_CODE_VERSION known, <  2.1.141       → write /dev/tty; give up if missing
+#   4. CLAUDE_CODE_VERSION unknown (non-Windows)    → try /dev/tty, fall back to JSON
 #
 # Usage:
 #   source "$SCRIPT_DIR/emit-terminal-sequence.sh"
@@ -23,6 +24,13 @@
 
 # The first Claude Code version that supports the terminalSequence output field.
 TERMINAL_SEQUENCE_MIN_VERSION="2.1.141"
+
+# Returns 0 (true) if running under Windows (MSYS, MINGW, or Cygwin).
+_is_windows() {
+    local kernel
+    kernel="$(uname -s 2>/dev/null)"
+    [[ "$kernel" == MINGW* || "$kernel" == MSYS* || "$kernel" == CYGWIN* ]]
+}
 
 # Compare two dotted version strings (e.g. "2.1.141" >= "2.1.141").
 # Returns 0 (true) if $1 >= $2, 1 (false) otherwise.
@@ -58,6 +66,12 @@ _supports_terminal_sequence() {
 emit_terminal_sequence() {
     local seq="$1"
     [ -z "$seq" ] && return 0
+
+    # Windows has no /dev/tty — always use the JSON terminalSequence path.
+    if _is_windows; then
+        jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
+        return 0
+    fi
 
     # Classify the running Claude Code version, if we can.
     local raw="${CLAUDE_CODE_VERSION:-}"
