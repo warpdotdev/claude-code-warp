@@ -76,6 +76,10 @@ Notifications work out of the box. To customize Warp's notification behavior (so
 The plugin version in `plugins/warp/.claude-plugin/plugin.json` is checked by the Warp client to detect outdated installations.
 When bumping the version here, also update `MINIMUM_PLUGIN_VERSION` in the Warp client.
 
+## Oz Cloud Agent Support
+
+Running Claude Code inside Warp's Oz cloud agents? See the [`oz-harness-support` plugin](plugins/oz-harness-support/README.md), installed automatically in those environments.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
