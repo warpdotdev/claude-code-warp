@@ -16,12 +16,9 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Try to extract an error message from the hook input.
-# Claude Code may surface the error under different field names depending on
-# the version, so check the most likely candidates.
-ERROR_MESSAGE=$(echo "$INPUT" | jq -r '
-    .error_message // .error // .message // empty
-' 2>/dev/null)
+# Extract the error type (e.g. "rate_limit") and human-readable message.
+ERROR_TYPE=$(echo "$INPUT" | jq -r '.error // empty' 2>/dev/null)
+ERROR_MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
 
 # Also try to extract the last user query from the transcript so Warp can
 # show it as the notification title, matching the Stop hook behaviour.
@@ -50,6 +47,7 @@ fi
 BODY=$(build_payload "$INPUT" "stop_failure" \
     --arg query "$QUERY" \
     --arg response "$ERROR_MESSAGE" \
+    --arg error_type "$ERROR_TYPE" \
     --arg transcript_path "$TRANSCRIPT_PATH")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
