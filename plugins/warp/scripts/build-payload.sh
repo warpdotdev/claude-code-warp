@@ -10,7 +10,7 @@
 #       --arg response "$RESPONSE" \
 #       --arg transcript_path "$TRANSCRIPT_PATH")
 #
-# The function extracts common fields (session_id, cwd, project) from the
+# The function extracts common fields (session_id, cwd, project, session_name) from the
 # hook's stdin JSON (passed as $1), then merges any extra jq args you pass.
 
 # The current protocol version this plugin knows how to produce.
@@ -43,7 +43,7 @@ lookup_session_name() {
     [ -e "${files[0]}" ] || return 0
 
     jq -rs --arg sid "$session_id" \
-        '[.[] | select(type == "object" and .sessionId == $sid)] | last | .name // empty' \
+        '[.[] | select(type == "object" and .sessionId == $sid)] | max_by(.updatedAt // 0) | .name // empty' \
         "${files[@]}" 2>/dev/null
 }
 
