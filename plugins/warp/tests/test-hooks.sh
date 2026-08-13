@@ -287,6 +287,66 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "=== extract-query.sh ==="
+
+source "$SCRIPT_DIR/extract-query.sh"
+
+FIXTURE_DIR=$(mktemp -d)
+trap 'rm -rf "$FIXTURE_DIR"' EXIT
+
+# A turn that ended because a background task reported back: the human's real
+# prompt came earlier, and Claude Code injected the <task-notification> turn.
+cat > "$FIXTURE_DIR/task-notification.jsonl" <<'FIXTURE'
+{"type":"user","origin":{"kind":"human"},"promptSource":"typed","message":{"role":"user","content":"review the pipeline for MR !1151"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Watching it now."}]}}
+{"type":"user","origin":{"kind":"task-notification"},"promptSource":"system","message":{"role":"user","content":"<task-notification>\n<task-id>bpzyv8z2j</task-id>\n<summary>Monitor event</summary>\n</task-notification>"}}
+FIXTURE
+assert_eq "task-notification does not become the query" \
+    "review the pipeline for MR !1151" \
+    "$(extract_query "$FIXTURE_DIR/task-notification.jsonl")"
+
+# Skill loads, slash-command expansions and compaction summaries are injected
+# with isMeta: true and no origin.
+cat > "$FIXTURE_DIR/meta.jsonl" <<'FIXTURE'
+{"type":"user","origin":{"kind":"human"},"promptSource":"typed","message":{"role":"user","content":"fix the hook"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"Base directory for this skill: /home/x/.claude/skills/y"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"[Image: source: /home/x/Pictures/shot.png]"}}
+FIXTURE
+assert_eq "isMeta turns do not become the query" \
+    "fix the hook" \
+    "$(extract_query "$FIXTURE_DIR/meta.jsonl")"
+
+# Tool results are "user" entries too, but carry no text block.
+cat > "$FIXTURE_DIR/tool-result.jsonl" <<'FIXTURE'
+{"type":"user","origin":{"kind":"human"},"promptSource":"typed","message":{"role":"user","content":[{"type":"text","text":"run the tests"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}
+FIXTURE
+assert_eq "text blocks in an array are joined, tool results skipped" \
+    "run the tests" \
+    "$(extract_query "$FIXTURE_DIR/tool-result.jsonl")"
+
+# Transcripts written before the origin field existed still need a usable query.
+cat > "$FIXTURE_DIR/no-origin.jsonl" <<'FIXTURE'
+{"type":"user","message":{"role":"user","content":"older prompt with no origin field"}}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>Added allow rule</local-command-stdout>"}}
+FIXTURE
+assert_eq "falls back to the last non-markup turn when origin is absent" \
+    "older prompt with no origin field" \
+    "$(extract_query "$FIXTURE_DIR/no-origin.jsonl")"
+
+# A transcript with nothing human in it must yield an empty query, not markup.
+cat > "$FIXTURE_DIR/only-injected.jsonl" <<'FIXTURE'
+{"type":"user","origin":{"kind":"task-notification"},"promptSource":"system","message":{"role":"user","content":"<task-notification>\n<task-id>abc</task-id>\n</task-notification>"}}
+FIXTURE
+assert_eq "no human turn yields an empty query" \
+    "" \
+    "$(extract_query "$FIXTURE_DIR/only-injected.jsonl")"
+
+assert_eq "missing transcript yields an empty query" \
+    "" \
+    "$(extract_query "$FIXTURE_DIR/does-not-exist.jsonl")"
+
 # --- Summary ---
 
 echo ""
