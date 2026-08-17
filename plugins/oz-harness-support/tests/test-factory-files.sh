@@ -4,13 +4,15 @@
 #
 # The skill tree under skills/factory-files is a byte-for-byte copy of
 # resources/bundled/skills/factory-files in warpdotdev/warp at the commit named
-# in this plugin's README. Its own regression corpus lives there; this checks
-# the one thing the copy can get wrong on its way over, which is arriving
-# incomplete or unrunnable.
+# in this plugin's README. Correctness of the Factory file format is owned by
+# warp-server, and the skill's own behavioural corpus lives in warp; this
+# checks the two things a copy can get wrong on its way over: arriving
+# incomplete, and arriving with a local copy of the format that should not
+# exist.
 #
-# The validator prefers warp-server and falls back to the bundled schemas, so
-# every run here passes --offline: CI has no server and no API key, and the
-# offline floor is what a mirror needs to guarantee.
+# There is no offline mode to exercise. CI has no warp-server, so the runnable
+# assertion here is that the validator reports a tree as NOT validated rather
+# than guessing at a verdict.
 
 set -uo pipefail
 
@@ -37,12 +39,6 @@ echo "factory-files mirror"
 for required in \
     "$SKILL/SKILL.md" \
     "$VALIDATOR" \
-    "$SKILL/schemas/common.schema.json" \
-    "$SKILL/schemas/factory.schema.json" \
-    "$SKILL/schemas/agent.schema.json" \
-    "$SKILL/schemas/automation.schema.json" \
-    "$SKILL/schemas/runner.schema.json" \
-    "$SKILL/schemas/scorer.schema.json" \
     "$SKILL/references/examples.md" \
     "$SKILL/references/scorers.md" \
     "$SKILL/references/validation.md"; do
@@ -53,17 +49,32 @@ for required in \
     fi
 done
 
+# A bundled copy of the format is the failure this design removed: it ships
+# inside a release, goes stale against the server, and then reports valid
+# fields as unknown.
+if find "$SKILL" -name '*.schema.json' | grep -q .; then
+    fail "the mirror carries bundled schemas, which go stale against the server"
+else
+    pass "no local copy of the format"
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
-    fail "python3 is required to run the bundled validator"
+    fail "python3 is required to run the validator"
     echo "  $PASSED passed, $FAILED failed"
     exit 1
+fi
+
+if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$VALIDATOR" 2>/dev/null; then
+    pass "the validator parses"
+else
+    fail "the validator does not parse"
 fi
 
 WORKSPACE="$(mktemp -d)"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
-mkdir -p "$WORKSPACE/valid/agents/main" "$WORKSPACE/invalid/agents/main"
-cat >"$WORKSPACE/valid/factory.yaml" <<'YAML'
+mkdir -p "$WORKSPACE/tree/agents/main"
+cat >"$WORKSPACE/tree/factory.yaml" <<'YAML'
 schemaVersion: v1alpha1
 name: mirror-smoke
 repositories:
@@ -72,34 +83,35 @@ repositories:
 agentDefaults:
   model: auto
 YAML
-printf -- '---\nagentType: MAIN\n---\nDo the thing.\n' >"$WORKSPACE/valid/agents/main/agent.md"
+printf -- '---\nagentType: MAIN\n---\nDo the thing.\n' >"$WORKSPACE/tree/agents/main/agent.md"
 
-# The same tree with no MAIN agent, which the tree-level rules must reject.
-cp "$WORKSPACE/valid/factory.yaml" "$WORKSPACE/invalid/factory.yaml"
-printf -- '---\ndescription: no main agent\n---\nDo the thing.\n' >"$WORKSPACE/invalid/agents/main/agent.md"
-
-output="$(python3 "$VALIDATOR" "$WORKSPACE/valid" --offline 2>&1)"
-if [ $? -eq 0 ]; then
-    pass "a valid tree is accepted offline"
+# Port 9 (discard) is reliably closed, so this exercises the unreachable-server
+# path without depending on the network.
+output="$(python3 "$VALIDATOR" "$WORKSPACE/tree" --server-root http://127.0.0.1:9 2>&1)"
+status=$?
+if [ "$status" -eq 2 ]; then
+    pass "an unreachable server exits 2"
 else
-    fail "a valid tree was rejected offline" "$output"
+    fail "an unreachable server should exit 2, got $status" "$output"
 fi
 
 case "$output" in
-    *"Server validation was unavailable"*)
-        pass "the offline fallback is disclosed"
+    *"was NOT validated"*)
+        pass "an unreachable server is reported as not validated"
         ;;
     *)
-        fail "the offline fallback was not disclosed" "$output"
+        fail "the missing verdict was not reported" "$output"
         ;;
 esac
 
-output="$(python3 "$VALIDATOR" "$WORKSPACE/invalid" --offline 2>&1)"
-if [ $? -ne 0 ]; then
-    pass "a tree with no MAIN agent is rejected offline"
-else
-    fail "a tree with no MAIN agent was accepted offline" "$output"
-fi
+case "$output" in
+    *"Validated with the warp-server parser"*)
+        fail "a run with no server claimed a server verdict" "$output"
+        ;;
+    *)
+        pass "no verdict is claimed without a server"
+        ;;
+esac
 
 echo "  $PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ] || exit 1
