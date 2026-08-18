@@ -39,7 +39,10 @@ Once restarted, you'll see a confirmation message and notifications will appear 
 
 - [Warp terminal](https://warp.dev) (macOS, Linux, or Windows)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
-- `jq` for JSON parsing (install via `brew install jq` or your package manager)
+- `jq` for JSON parsing — install via your package manager:
+  - macOS: `brew install jq`
+  - Linux: `sudo apt install jq` (Debian/Ubuntu) or `sudo dnf install jq` (Fedora)
+  - Windows: `scoop install jq` or `choco install jq`
 
 ## How It Works
 
