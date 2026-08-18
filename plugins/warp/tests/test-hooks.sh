@@ -67,6 +67,29 @@ assert_json_field "empty cwd" "$PAYLOAD" ".cwd" ""
 assert_json_field "empty project" "$PAYLOAD" ".project" ""
 
 echo ""
+echo "--- Session name lookup ---"
+SESSIONS_FIXTURE=$(mktemp -d)
+echo '{"pid":111,"sessionId":"sess-123","name":"my renamed session","status":"idle"}' > "$SESSIONS_FIXTURE/111.json"
+echo '{"pid":222,"sessionId":"sess-other","name":"other session","status":"busy"}' > "$SESSIONS_FIXTURE/222.json"
+
+export CLAUDE_SESSIONS_DIR="$SESSIONS_FIXTURE"
+PAYLOAD=$(build_payload '{"session_id":"sess-123","cwd":"/Users/alice/my-project"}' "stop")
+assert_json_field "session_name from registry" "$PAYLOAD" ".session_name" "my renamed session"
+
+PAYLOAD=$(build_payload '{"session_id":"sess-unknown","cwd":"/tmp/proj"}' "stop")
+assert_json_field "unknown session id yields empty name" "$PAYLOAD" ".session_name" ""
+
+PAYLOAD=$(build_payload '{"cwd":"/tmp/proj"}' "stop")
+assert_json_field "missing session id yields empty name" "$PAYLOAD" ".session_name" ""
+
+export CLAUDE_SESSIONS_DIR="$SESSIONS_FIXTURE/does-not-exist"
+PAYLOAD=$(build_payload '{"session_id":"sess-123","cwd":"/tmp/proj"}' "stop")
+assert_json_field "missing registry dir yields empty name" "$PAYLOAD" ".session_name" ""
+
+unset CLAUDE_SESSIONS_DIR
+rm -rf "$SESSIONS_FIXTURE"
+
+echo ""
 echo "--- Extra args are merged ---"
 PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "stop" \
     --arg query "hello" \
