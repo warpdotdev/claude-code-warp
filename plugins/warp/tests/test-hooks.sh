@@ -287,6 +287,87 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+# --- PostToolUse payload tests ---
+# The optimized on-post-tool-use.sh inlines payload construction and writes
+# to /dev/tty. We use `script` to capture pty output and extract the JSON.
+
+run_hook_capture() {
+    local hook="$1"
+    local input="$2"
+    local tmpfile inputfile
+    tmpfile=$(mktemp)
+    inputfile=$(mktemp)
+    printf '%s' "$input" > "$inputfile"
+    script -q "$tmpfile" bash -c "bash \"$HOOK_DIR/$hook\" < \"$inputfile\"; wait; sleep 0.2" >/dev/null 2>&1
+    local payload
+    payload=$(tr -d '\r' < "$tmpfile" | grep -o '{[^}]*}' | tail -1)
+    rm -f "$tmpfile" "$inputfile"
+    echo "$payload"
+}
+
+echo ""
+echo "=== on-post-tool-use.sh (payload) ==="
+
+echo ""
+echo "--- Basic payload construction ---"
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+export WARP_CLIENT_VERSION="v0.2026.04.29.08.57.preview_01"
+
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Read","session_id":"sess-456","cwd":"/Users/alice/my-project"}')
+assert_json_field "v is 1" "$PAYLOAD" ".v" "1"
+assert_json_field "agent is claude" "$PAYLOAD" ".agent" "claude"
+assert_json_field "event is tool_complete" "$PAYLOAD" ".event" "tool_complete"
+assert_json_field "session_id extracted" "$PAYLOAD" ".session_id" "sess-456"
+assert_json_field "cwd extracted" "$PAYLOAD" ".cwd" "/Users/alice/my-project"
+assert_json_field "project is basename of cwd" "$PAYLOAD" ".project" "my-project"
+assert_json_field "tool_name extracted" "$PAYLOAD" ".tool_name" "Read"
+
+echo ""
+echo "--- Trailing slash in cwd ---"
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Read","session_id":"s1","cwd":"/Users/alice/project/"}')
+assert_json_field "trailing slash stripped for project" "$PAYLOAD" ".project" "project"
+
+echo ""
+echo "--- Missing fields produce empty strings ---"
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Bash"}')
+assert_json_field "missing session_id is empty" "$PAYLOAD" ".session_id" ""
+assert_json_field "missing cwd is empty" "$PAYLOAD" ".cwd" ""
+assert_json_field "missing cwd gives empty project" "$PAYLOAD" ".project" ""
+assert_json_field "tool_name still works" "$PAYLOAD" ".tool_name" "Bash"
+
+echo ""
+echo "--- Protocol version negotiation (inline) ---"
+export WARP_CLI_AGENT_PROTOCOL_VERSION=99
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Edit","session_id":"s1","cwd":"/tmp"}')
+assert_json_field "protocol capped to 1 when warp declares 99" "$PAYLOAD" ".v" "1"
+
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Edit","session_id":"s1","cwd":"/tmp"}')
+assert_json_field "protocol is 1 when warp declares 1" "$PAYLOAD" ".v" "1"
+
+echo ""
+echo "--- Non-numeric protocol version falls back to 1 ---"
+export WARP_CLI_AGENT_PROTOCOL_VERSION="garbage"
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Edit","session_id":"s1","cwd":"/tmp"}')
+assert_json_field "non-numeric protocol falls back to 1" "$PAYLOAD" ".v" "1"
+
+echo ""
+echo "--- Early exit without protocol version ---"
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Read","session_id":"s1","cwd":"/tmp"}')
+assert_eq "no output when WARP_CLI_AGENT_PROTOCOL_VERSION unset" "" "$PAYLOAD"
+
+echo ""
+echo "--- Early exit for broken Warp version ---"
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+export WARP_CLIENT_VERSION="v0.2026.03.25.08.24.stable_05"
+PAYLOAD=$(run_hook_capture "on-post-tool-use.sh" '{"tool_name":"Read","session_id":"s1","cwd":"/tmp"}')
+assert_eq "no output for broken stable version" "" "$PAYLOAD"
+
+# Clean up
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+unset WARP_CLIENT_VERSION
+
 # --- Summary ---
 
 echo ""
