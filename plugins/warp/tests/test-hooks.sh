@@ -54,6 +54,13 @@ echo "--- Common fields ---"
 PAYLOAD=$(build_payload '{"session_id":"sess-123","cwd":"/Users/alice/my-project"}' "stop")
 assert_json_field "v is 1" "$PAYLOAD" ".v" "1"
 assert_json_field "agent is claude" "$PAYLOAD" ".agent" "claude"
+
+echo ""
+echo "--- Agent slug override ---"
+PAYLOAD=$(WARP_CLI_AGENT_NAME=plank build_payload '{"session_id":"sess-123","cwd":"/Users/alice/my-project"}' "stop")
+assert_json_field "agent honors WARP_CLI_AGENT_NAME" "$PAYLOAD" ".agent" "plank"
+PAYLOAD=$(WARP_CLI_AGENT_NAME= build_payload '{"session_id":"sess-123","cwd":"/Users/alice/my-project"}' "stop")
+assert_json_field "empty WARP_CLI_AGENT_NAME falls back to claude" "$PAYLOAD" ".agent" "claude"
 assert_json_field "event is stop" "$PAYLOAD" ".event" "stop"
 assert_json_field "session_id extracted" "$PAYLOAD" ".session_id" "sess-123"
 assert_json_field "cwd extracted" "$PAYLOAD" ".cwd" "/Users/alice/my-project"
