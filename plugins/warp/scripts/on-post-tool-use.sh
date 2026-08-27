@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code PostToolUse event
 # Sends a structured Warp notification after a tool call completes,
 # transitioning the session status from Blocked back to Running.

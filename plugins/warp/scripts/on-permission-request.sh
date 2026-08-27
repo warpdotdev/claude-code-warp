@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code PermissionRequest event
 # Sends a structured Warp notification when Claude needs permission to run a tool
 

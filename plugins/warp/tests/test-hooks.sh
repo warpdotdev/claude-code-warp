@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Tests for the Warp Claude Code plugin hook scripts.
 #
 # Validates that each hook script produces correctly structured JSON payloads

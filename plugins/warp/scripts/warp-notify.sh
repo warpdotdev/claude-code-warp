@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Warp notification utility using OSC escape sequences
 # Usage: warp-notify.sh <title> <body>
 #

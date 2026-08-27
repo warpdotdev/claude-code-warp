@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code Stop event
 # Sends a structured Warp notification when Claude completes a task
 

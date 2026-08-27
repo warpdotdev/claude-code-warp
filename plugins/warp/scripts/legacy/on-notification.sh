@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code Notification event
 # Sends a Warp notification when Claude needs user input
 

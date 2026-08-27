@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code UserPromptSubmit event
 # Sends a structured Warp notification when the user submits a prompt,
 # transitioning the session status from idle/blocked back to running.

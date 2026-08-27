@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code Notification event (idle_prompt only)
 # Sends a structured Warp notification when Claude has been idle
 

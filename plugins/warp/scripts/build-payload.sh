@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Builds a structured JSON notification payload for warp://cli-agent.
 #
 # Usage: source this file, then call build_payload with event-specific fields.

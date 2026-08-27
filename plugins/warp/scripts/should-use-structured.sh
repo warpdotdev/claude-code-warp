@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Determines whether the current Warp build supports structured CLI agent notifications.
 #
 # Usage:

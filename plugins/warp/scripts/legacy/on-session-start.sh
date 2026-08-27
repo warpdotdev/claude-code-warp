@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Hook script for Claude Code SessionStart event
 # Shows welcome message and Warp detection status
 
