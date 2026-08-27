@@ -287,6 +287,102 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "=== extract-transcript.sh ==="
+
+source "$SCRIPT_DIR/extract-transcript.sh"
+
+TRANSCRIPT=$(mktemp -t warp-transcript)
+trap 'rm -f "$TRANSCRIPT"' EXIT
+
+# Writes each argument as one JSONL entry of the mock transcript.
+write_transcript() {
+    printf '%s\n' "$@" > "$TRANSCRIPT"
+}
+
+HUMAN='{"type":"user","message":{"role":"user","content":"check the prod deploy"}}'
+HUMAN_OLDER='{"type":"user","message":{"role":"user","content":"open the dashboard"}}'
+ASSISTANT='{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Looking."}]}}'
+TOOL_RESULT='{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}'
+
+echo ""
+echo "--- Human prompts are returned ---"
+
+write_transcript "$HUMAN_OLDER" "$ASSISTANT" "$HUMAN" "$ASSISTANT"
+assert_eq "last human prompt wins" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"deploy"},{"type":"text","text":"now"}]}}'
+assert_eq "text blocks are joined" "deploy now" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" "$TOOL_RESULT"
+assert_eq "tool results are skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+echo ""
+echo "--- Synthetic entries are skipped ---"
+
+# Local `!` bash mode: Claude Code records the command and its output as
+# plain-string user entries.
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"<bash-input>aws ecs list-tasks</bash-input>"}}' \
+    '{"type":"user","message":{"role":"user","content":"<bash-stdout>arn:aws:ecs:us-east-1:123:task/prod/a4d9c84a</bash-stdout><bash-stderr></bash-stderr>"}}'
+assert_eq "bash mode output is skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>b7s43w48d</task-id>\n</task-notification>"}}'
+assert_eq "background subagent notification is skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"<command-name>/clear</command-name><command-message>clear</command-message>"}}' \
+    '{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat</local-command-caveat>"}}' \
+    '{"type":"user","message":{"role":"user","content":"<local-command-stdout>Login successful.</local-command-stdout>"}}'
+assert_eq "slash-command wrappers are skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"<system-reminder>Do not mention this.</system-reminder>"}}'
+assert_eq "system reminder is skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+# Cross-session/teammate envelopes arrive behind a framing line, so the tag is
+# not at the start of the entry.
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"Another Claude session sent a message:\n<teammate-message teammate_id=\"researcher\" summary=\"done\">ok</teammate-message>"}}'
+assert_eq "teammate message is skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"[Request interrupted by user for tool use]"}}'
+assert_eq "interrupt marker is skipped" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$HUMAN" \
+    '{"type":"user","message":{"role":"user","content":"   \n<bash-stdout>indented</bash-stdout>"}}'
+assert_eq "leading whitespace does not defeat the filter" "check the prod deploy" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+echo ""
+echo "--- Human prompts are never over-filtered ---"
+
+write_transcript '{"type":"user","message":{"role":"user","content":"why does the title show <bash-stdout> instead of my prompt?"}}'
+assert_eq "a prompt mentioning a tag mid-sentence is kept" \
+    "why does the title show <bash-stdout> instead of my prompt?" \
+    "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+echo ""
+echo "--- Degenerate transcripts ---"
+
+write_transcript '{"type":"user","message":{"role":"user","content":"<bash-stdout>only synthetic</bash-stdout>"}}'
+assert_eq "all-synthetic transcript yields empty (Warp falls back to its own title)" \
+    "" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+write_transcript "$ASSISTANT"
+assert_eq "no user entries yields empty" "" "$(extract_last_user_prompt "$TRANSCRIPT")"
+
+assert_eq "missing transcript yields empty" "" "$(extract_last_user_prompt "/nonexistent/transcript.jsonl")"
+assert_eq "empty path yields empty" "" "$(extract_last_user_prompt "")"
+
+echo ""
+echo "--- Assistant response extraction ---"
+
+write_transcript "$HUMAN" "$ASSISTANT"
+assert_eq "last assistant response returned" "Looking." "$(extract_last_assistant_response "$TRANSCRIPT")"
+assert_eq "missing transcript yields empty response" "" "$(extract_last_assistant_response "/nonexistent/transcript.jsonl")"
+
 # --- Summary ---
 
 echo ""
