@@ -39,8 +39,11 @@ build_payload() {
     local session_id cwd project
     session_id=$(echo "$input" | jq -r '.session_id // empty' 2>/dev/null)
     cwd=$(echo "$input" | jq -r '.cwd // empty' 2>/dev/null)
+    # Allow users to suppress the auto-derived project field so Warp doesn't
+    # override a tab name that the user (or another tool) has set explicitly.
+    # Set WARP_PLUGIN_DISABLE_PROJECT=1 to opt out.
     project=""
-    if [ -n "$cwd" ]; then
+    if [ -n "$cwd" ] && [ -z "${WARP_PLUGIN_DISABLE_PROJECT:-}" ]; then
         project=$(basename "$cwd")
     fi
 
