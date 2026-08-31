@@ -72,14 +72,14 @@ emit_terminal_sequence() {
             # Known-old Claude Code — /dev/tty is the only safe path.
             # Emitting terminalSequence here would be rejected by the Stop
             # hook validator as an unknown field.
-            printf '%s' "$seq" > /dev/tty 2>/dev/null || true
+            printf '%s' "$seq" 2>/dev/null > /dev/tty || true
         fi
         return 0
     fi
 
     # Unknown Claude Code version — try /dev/tty, fall back to JSON
     # as a best-effort attempt for new CC without version detection.
-    if printf '%s' "$seq" > /dev/tty 2>/dev/null; then
+    if printf '%s' "$seq" 2>/dev/null > /dev/tty; then
         return 0
     fi
     jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
