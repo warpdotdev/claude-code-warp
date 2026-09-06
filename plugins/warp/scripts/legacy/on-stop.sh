@@ -3,9 +3,17 @@
 # Sends a Warp notification when Claude completes a task
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../has-background-work.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
+
+# Skip while background work (sub-agents, background shells, ...) is still
+# running — only the final Stop, with nothing left in flight, is a real
+# "task complete". See has-background-work.sh.
+if has_background_work "$INPUT"; then
+    exit 0
+fi
 
 # Extract transcript path from the hook input
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)

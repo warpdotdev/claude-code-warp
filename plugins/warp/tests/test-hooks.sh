@@ -260,6 +260,41 @@ OUTPUT=$(emit_terminal_sequence "test-seq")
 assert_json_field "new CC outputs terminalSequence" "$OUTPUT" ".terminalSequence" "test-seq"
 unset CLAUDE_CODE_VERSION
 
+echo ""
+echo "=== has-background-work.sh ==="
+
+source "$SCRIPT_DIR/../scripts/has-background-work.sh"
+
+echo ""
+echo "--- Field absent (older Claude Code) → no background work ---"
+has_background_work '{"session_id":"s1"}'
+assert_eq "missing background_tasks returns false" "1" "$?"
+
+echo ""
+echo "--- Empty array → no background work ---"
+has_background_work '{"background_tasks":[]}'
+assert_eq "empty background_tasks returns false" "1" "$?"
+
+echo ""
+echo "--- Running sub-agent → background work ---"
+has_background_work '{"background_tasks":[{"id":"a1","type":"subagent","status":"running","description":"Explore repo","agent_type":"Explore"}]}'
+assert_eq "running subagent returns true" "0" "$?"
+
+echo ""
+echo "--- Running background shell → background work ---"
+has_background_work '{"background_tasks":[{"id":"b1","type":"shell","status":"running","description":"tail logs","command":"tail -f log"}]}'
+assert_eq "running shell returns true" "0" "$?"
+
+echo ""
+echo "--- Only non-running entries → no background work ---"
+has_background_work '{"background_tasks":[{"id":"a1","type":"subagent","status":"completed"}]}'
+assert_eq "completed task returns false" "1" "$?"
+
+echo ""
+echo "--- Malformed input → fail open ---"
+has_background_work 'not json'
+assert_eq "invalid JSON returns false" "1" "$?"
+
 # --- Routing tests ---
 # These test the hook scripts as subprocesses to verify routing behavior.
 # We override /dev/tty writes since they'd fail in CI.
@@ -278,6 +313,24 @@ SYS_MSG=$(echo "$OUTPUT" | jq -r '.systemMessage // empty' 2>/dev/null)
 assert_eq "legacy Warp shows active message" \
     "🔔 Warp plugin active. You'll receive native Warp notifications when tasks complete or input is needed." \
     "$SYS_MSG"
+
+echo ""
+echo "--- Stop routing with background tasks ---"
+
+# Structured Warp + Claude Code that supports terminalSequence, so a fired
+# notification shows up on stdout instead of /dev/tty.
+STOP_ENV="WARP_CLI_AGENT_PROTOCOL_VERSION=1 WARP_CLIENT_VERSION=v0.2026.04.01.08.00.stable_00 CLAUDE_CODE_VERSION=2.1.145"
+
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp","background_tasks":[{"id":"a1","type":"subagent","status":"running"}]}' \
+    | env $STOP_ENV bash "$HOOK_DIR/on-stop.sh" 2>/dev/null)
+assert_eq "on-stop.sh exits 0 while background tasks run" "0" "$?"
+assert_eq "on-stop.sh sends nothing while background tasks run" "" "$OUTPUT"
+
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp","background_tasks":[]}' \
+    | env $STOP_ENV bash "$HOOK_DIR/on-stop.sh" 2>/dev/null)
+SEQ=$(echo "$OUTPUT" | jq -r '.terminalSequence // empty' 2>/dev/null)
+assert_eq "on-stop.sh notifies once background tasks are done" "stop" \
+    "$(printf '%s' "$SEQ" | sed -n 's/.*"event":"\([a-z_]*\)".*/\1/p')"
 
 echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"

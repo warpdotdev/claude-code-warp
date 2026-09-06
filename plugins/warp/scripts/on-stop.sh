@@ -12,6 +12,7 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/has-background-work.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -19,6 +20,14 @@ INPUT=$(cat)
 # Skip if a stop hook is already active (prevents double-notification)
 STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null)
 if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+    exit 0
+fi
+
+# Skip while background work (sub-agents, background shells, monitors, ...) is
+# still running. Stop fires when the main agent's turn ends even though tasks
+# are in flight, and again each time one finishes and wakes the main agent.
+# Only the final Stop, with nothing left running, is a real "task complete".
+if has_background_work "$INPUT"; then
     exit 0
 fi
 

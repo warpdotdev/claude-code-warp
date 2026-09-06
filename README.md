@@ -49,7 +49,7 @@ Payloads include a protocol version negotiated between the plugin and Warp (`min
 
 The plugin registers six hooks:
 - **SessionStart** — emits the plugin version and a welcome system message
-- **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification
+- **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification. Skipped while background sub-agents or shells are still running (`background_tasks` in the hook input, Claude Code ≥ 2.1.145); the Stop that fires once they finish sends the notification instead
 - **Notification** (`idle_prompt`) — fires when Claude has been idle and needs your input
 - **PermissionRequest** — fires when Claude wants to run a tool, includes the tool name and a preview of its input
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
