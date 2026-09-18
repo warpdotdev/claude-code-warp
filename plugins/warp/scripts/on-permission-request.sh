@@ -22,7 +22,7 @@ TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
 [ -z "$TOOL_INPUT" ] && TOOL_INPUT='{}'
 
 # Build a human-readable summary
-TOOL_PREVIEW=$(echo "$INPUT" | jq -r '(.tool_input | if .command then .command elif .file_path then .file_path else (tostring | .[0:80]) end) // ""' 2>/dev/null)
+TOOL_PREVIEW=$(echo "$INPUT" | jq -r '(.tool_input | if .command then .command elif .file_path then .file_path elif .questions then (.questions[0].question // "") else (tostring | .[0:80]) end) // ""' 2>/dev/null)
 SUMMARY="Wants to run $TOOL_NAME"
 if [ -n "$TOOL_PREVIEW" ]; then
     if [ ${#TOOL_PREVIEW} -gt 120 ]; then

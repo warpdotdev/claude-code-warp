@@ -267,6 +267,74 @@ unset CLAUDE_CODE_VERSION
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 
 echo ""
+echo "=== Stop query selection ==="
+
+# Feeds a transcript through on-stop.sh and pulls .query back out, so the
+# synthetic-entry filtering is covered by the suite.
+stop_query() {
+    local file
+    file=$(mktemp)
+    printf '%s\n' "$@" > "$file"
+    echo "{\"session_id\":\"s\",\"cwd\":\"/tmp/p\",\"transcript_path\":\"$file\"}" |
+        WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+        WARP_CLIENT_VERSION="v9999.99.99.99.99.stable_99" \
+        CLAUDE_CODE_VERSION="9999.0.0" \
+        bash "$HOOK_DIR/on-stop.sh" 2>/dev/null |
+        jq -r '.terminalSequence // empty' |
+        sed 's/^.*warp:\/\/cli-agent;//' | tr -d '\007' |
+        jq -r '.query // empty'
+    rm -f "$file"
+}
+
+HUMAN='{"type":"user","message":{"role":"user","content":"ship the release"}}'
+NOTIF='{"type":"user","message":{"role":"user","content":"<task-notification>\nbuild done"}}'
+HOOKFB='{"type":"user","message":{"role":"user","content":"Stop hook feedback:\n[hook] do X"}}'
+PEER='{"type":"user","message":{"role":"user","content":"Another Claude session sent a message:\nhi"}}'
+IMGONLY='{"type":"user","message":{"role":"user","content":"[Image: source: /tmp/a.png]"}}'
+SIDE='{"type":"user","isSidechain":true,"message":{"role":"user","content":"subagent prompt"}}'
+REPLY='{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}'
+
+echo ""
+echo "--- Query skips synthetic user entries ---"
+
+assert_eq "plain prompt is used" "ship the release" "$(stop_query "$HUMAN" "$REPLY")"
+assert_eq "task notification skipped" "ship the release" "$(stop_query "$HUMAN" "$REPLY" "$NOTIF")"
+assert_eq "stop hook feedback skipped" "ship the release" "$(stop_query "$HUMAN" "$REPLY" "$HOOKFB")"
+assert_eq "peer message skipped" "ship the release" "$(stop_query "$HUMAN" "$REPLY" "$PEER")"
+assert_eq "subagent prompt skipped" "ship the release" "$(stop_query "$HUMAN" "$REPLY" "$SIDE")"
+assert_eq "image-only message leaves no path" "ship the release" "$(stop_query "$HUMAN" "$REPLY" "$IMGONLY")"
+
+echo ""
+echo "=== Permission request preview ==="
+
+# Runs on-permission-request.sh end to end and pulls .summary back out of the
+# OSC sequence, so the jq preview expression is covered by the suite.
+permission_summary() {
+    echo "$1" | WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+        WARP_CLIENT_VERSION="v9999.99.99.99.99.stable_99" \
+        CLAUDE_CODE_VERSION="9999.0.0" \
+        bash "$HOOK_DIR/on-permission-request.sh" 2>/dev/null |
+        jq -r '.terminalSequence // empty' |
+        sed 's/^.*warp:\/\/cli-agent;//' | tr -d '\007' |
+        jq -r '.summary // empty'
+}
+
+echo ""
+echo "--- Tool preview ---"
+
+assert_eq "Bash shows the command" "Wants to run Bash: git push origin main" \
+    "$(permission_summary '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}')"
+
+assert_eq "Write shows the path" "Wants to run Write: /tmp/a.txt" \
+    "$(permission_summary '{"tool_name":"Write","tool_input":{"file_path":"/tmp/a.txt","content":"hi"}}')"
+
+assert_eq "AskUserQuestion shows the question" "Wants to run AskUserQuestion: Deploy now or wait?" \
+    "$(permission_summary '{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Deploy now or wait?","header":"Deploy"}]}}')"
+
+assert_eq "unknown tool falls back to the raw input" 'Wants to run WebFetch: {"url":"https://example.com"}' \
+    "$(permission_summary '{"tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}')"
+
+echo ""
 echo "=== Routing ==="
 
 echo ""
