@@ -45,6 +45,17 @@ _parse_cc_version() {
     echo "$1" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
 }
 
+# Returns 0 if we are running inside Claude Code.
+#
+# The `terminalSequence` output field is Claude Code-specific. Other harnesses
+# run Claude Code-format hooks (Codex, for one, maps hooks/hooks.json onto its
+# own event names) but reject unknown keys in hook stdout, so emitting it there
+# turns every hook into a user-visible error -- e.g. Codex prints
+# "hook returned invalid post-tool-use JSON output" on every tool call.
+_is_claude_code() {
+    [ -n "${CLAUDECODE:-}" ] || [ -n "${CLAUDE_CODE_VERSION:-}" ]
+}
+
 # Returns 0 if the running Claude Code version supports terminalSequence.
 _supports_terminal_sequence() {
     local raw="${CLAUDE_CODE_VERSION:-}"
@@ -82,5 +93,9 @@ emit_terminal_sequence() {
     if printf '%s' "$seq" > /dev/tty 2>/dev/null; then
         return 0
     fi
+
+    # No tty and no version. Only gamble on terminalSequence when we can still
+    # tell we are inside Claude Code; every other harness rejects the field.
+    _is_claude_code || return 0
     jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
 }
