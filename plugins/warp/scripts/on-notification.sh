@@ -20,6 +20,9 @@ INPUT=$(cat)
 NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // "unknown"' 2>/dev/null)
 MSG=$(echo "$INPUT" | jq -r '.message // "Input needed"' 2>/dev/null)
 [ -z "$MSG" ] && MSG="Input needed"
+if [ ${#MSG} -gt 120 ]; then
+    MSG="${MSG:0:117}..."
+fi
 
 BODY=$(build_payload "$INPUT" "$NOTIF_TYPE" \
     --arg summary "$MSG")
