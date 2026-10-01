@@ -1,6 +1,6 @@
 #!/bin/bash
-# Hook script for Claude Code Notification event (idle_prompt only)
-# Sends a structured Warp notification when Claude has been idle
+# Hook script for Claude Code Notification event (idle_prompt and agent_needs_input)
+# Sends a structured Warp notification when Claude has been idle or needs input
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"

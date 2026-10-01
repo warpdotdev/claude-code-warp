@@ -14,6 +14,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 source "$SCRIPT_DIR/build-payload.sh"
+PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$PLUGIN_DIR/../.." && pwd)"
 
 PASSED=0
 FAILED=0
@@ -47,6 +49,20 @@ assert_json_field() {
 
 # --- Tests ---
 
+echo "=== plugin configuration ==="
+
+PLUGIN_VERSION=$(jq -r '.version' "$PLUGIN_DIR/.claude-plugin/plugin.json")
+MARKETPLACE_VERSION=$(jq -r '.plugins[] | select(.name == "warp") | .version' \
+    "$REPO_DIR/.claude-plugin/marketplace.json")
+NOTIFICATION_MATCHER=$(jq -r '.hooks.Notification[0].matcher' "$PLUGIN_DIR/hooks/hooks.json")
+
+assert_eq "plugin version bumped" "2.3.0" "$PLUGIN_VERSION"
+assert_eq "marketplace version matches plugin" "$PLUGIN_VERSION" "$MARKETPLACE_VERSION"
+assert_eq "notification matcher includes input-required events" \
+    "idle_prompt|agent_needs_input" \
+    "$NOTIFICATION_MATCHER"
+
+echo ""
 echo "=== build-payload.sh ==="
 
 echo ""
@@ -103,6 +119,12 @@ PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj","notification_type
     --arg summary "Claude is waiting for your input")
 assert_json_field "event is idle_prompt" "$PAYLOAD" ".event" "idle_prompt"
 assert_json_field "summary present" "$PAYLOAD" ".summary" "Claude is waiting for your input"
+echo ""
+echo "--- Agent needs input event ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj","notification_type":"agent_needs_input"}' "agent_needs_input" \
+    --arg summary "Agent requires user input")
+assert_json_field "event is agent_needs_input" "$PAYLOAD" ".event" "agent_needs_input"
+assert_json_field "generic summary present" "$PAYLOAD" ".summary" "Agent requires user input"
 
 echo ""
 echo "--- JSON special characters in values ---"

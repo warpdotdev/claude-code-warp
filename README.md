@@ -8,7 +8,7 @@ Official [Warp](https://warp.dev) terminal integration for [Claude Code](https:/
 
 Get native Warp notifications when Claude Code:
 - **Completes a task** — with a summary showing your prompt and Claude's response
-- **Needs your input** — when Claude has been idle and is waiting for you
+- **Needs your input** — when Claude is waiting for you, including background agents
 - **Requests permission** — when Claude wants to run a tool and needs your approval
 
 Notifications appear in Warp's notification center and as system notifications, so you can context-switch while Claude works and get alerted when attention is needed.
@@ -47,10 +47,10 @@ The plugin communicates with Warp via OSC 777 escape sequences. Each hook script
 
 Payloads include a protocol version negotiated between the plugin and Warp (`min(plugin_version, warp_version)`), the session ID, working directory, and event-specific fields.
 
-The plugin registers six hooks:
+The plugin registers lifecycle hooks including:
 - **SessionStart** — emits the plugin version and a welcome system message
 - **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification
-- **Notification** (`idle_prompt`) — fires when Claude has been idle and needs your input
+- **Notification** (`idle_prompt`, `agent_needs_input`) — fires when Claude is waiting for user input
 - **PermissionRequest** — fires when Claude wants to run a tool, includes the tool name and a preview of its input
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
 - **PostToolUse** — fires when a tool call completes, signaling the session is no longer blocked
