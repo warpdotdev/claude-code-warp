@@ -24,7 +24,7 @@
     ],
     "Notification": [
       {
-        "matcher": "idle_prompt",
+        "matcher": "idle_prompt|agent_needs_input",
         "hooks": [
           {
             "type": "command",
