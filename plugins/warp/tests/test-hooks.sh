@@ -56,7 +56,7 @@ MARKETPLACE_VERSION=$(jq -r '.plugins[] | select(.name == "warp") | .version' \
     "$REPO_DIR/.claude-plugin/marketplace.json")
 NOTIFICATION_MATCHER=$(jq -r '.hooks.Notification[0].matcher' "$PLUGIN_DIR/hooks/hooks.json")
 
-assert_eq "plugin version bumped" "2.3.0" "$PLUGIN_VERSION"
+assert_eq "plugin version bumped" "2.4.0" "$PLUGIN_VERSION"
 assert_eq "marketplace version matches plugin" "$PLUGIN_VERSION" "$MARKETPLACE_VERSION"
 assert_eq "notification matcher includes input-required events" \
     "idle_prompt|agent_needs_input" \
@@ -101,6 +101,17 @@ assert_json_field "event is stop" "$PAYLOAD" ".event" "stop"
 assert_json_field "query present" "$PAYLOAD" ".query" "write a haiku"
 assert_json_field "response present" "$PAYLOAD" ".response" "Memory is safe, the borrow checker stands guard"
 assert_json_field "transcript_path present" "$PAYLOAD" ".transcript_path" "/tmp/transcript.jsonl"
+
+echo ""
+echo "--- Stop event pending background work ---"
+STOP_INPUT='{"session_id":"s1","cwd":"/tmp/proj","background_tasks":[{"id":"t1","type":"shell","status":"running"},{"id":"t2","type":"subagent","status":"running"}],"session_crons":[{"id":"c1","schedule":"* * * * *"}]}'
+PAYLOAD=$(build_payload "$STOP_INPUT" "stop" \
+    --argjson background_task_count "$(echo "$STOP_INPUT" | jq -r '.background_tasks // [] | length')" \
+    --argjson session_cron_count "$(echo "$STOP_INPUT" | jq -r '.session_crons // [] | length')")
+assert_json_field "background_task_count is numeric" "$PAYLOAD" ".background_task_count | type" "number"
+assert_json_field "background_task_count merged" "$PAYLOAD" ".background_task_count" "2"
+assert_json_field "session_cron_count merged" "$PAYLOAD" ".session_cron_count" "1"
+assert_eq "missing arrays count as 0" "0" "$(echo '{"session_id":"s1"}' | jq -r '.background_tasks // [] | length')"
 
 echo ""
 echo "--- Permission request event ---"
