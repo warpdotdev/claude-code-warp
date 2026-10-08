@@ -65,9 +65,16 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     fi
 fi
 
+# Claude Code wakes the agent again when a background task finishes or a session cron fires,
+# so a Stop with either pending is a pause rather than the end of the session.
+BACKGROUND_TASK_COUNT=$(hook_input_array_length "$INPUT" background_tasks)
+SESSION_CRON_COUNT=$(hook_input_array_length "$INPUT" session_crons)
+
 BODY=$(build_payload "$INPUT" "stop" \
     --arg query "$QUERY" \
     --arg response "$RESPONSE" \
-    --arg transcript_path "$TRANSCRIPT_PATH")
+    --arg transcript_path "$TRANSCRIPT_PATH" \
+    --argjson background_task_count "$BACKGROUND_TASK_COUNT" \
+    --argjson session_cron_count "$SESSION_CRON_COUNT")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"

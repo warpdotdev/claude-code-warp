@@ -49,7 +49,7 @@ Payloads include a protocol version negotiated between the plugin and Warp (`min
 
 The plugin registers lifecycle hooks including:
 - **SessionStart** — emits the plugin version and a welcome system message
-- **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification
+- **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification that also reports how many background tasks and scheduled wakeups are still pending, so Warp can tell a finished session from one waiting on background work
 - **Notification** (`idle_prompt`, `agent_needs_input`) — fires when Claude is waiting for user input
 - **PermissionRequest** — fires when Claude wants to run a tool, includes the tool name and a preview of its input
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
