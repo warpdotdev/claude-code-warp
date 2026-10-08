@@ -27,17 +27,6 @@ negotiate_protocol_version() {
     fi
 }
 
-# Number of entries in a top-level array field of the hook input. Prints 0 when the field is
-# absent or not an array, so callers can pass the result straight to `--argjson`.
-hook_input_array_length() {
-    local input="$1"
-    local field="$2"
-    local length
-    length=$(echo "$input" | jq -r --arg field "$field" \
-        'if (.[$field] | type) == "array" then (.[$field] | length) else 0 end' 2>/dev/null)
-    echo "${length:-0}"
-}
-
 build_payload() {
     local input="$1"
     local event="$2"
