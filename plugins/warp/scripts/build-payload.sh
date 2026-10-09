@@ -35,6 +35,11 @@ build_payload() {
     local protocol_version
     protocol_version=$(negotiate_protocol_version)
 
+    # Sourced by the hook scripts, so `return` (not `exit`) when jq is missing;
+    # callers treat an empty body as "no notification to send" rather than
+    # surfacing "jq: command not found" as a hook error.
+    command -v jq &>/dev/null || return 0
+
     # Extract common fields from the hook input
     local session_id cwd project
     session_id=$(echo "$input" | jq -r '.session_id // empty' 2>/dev/null)
@@ -46,7 +51,12 @@ build_payload() {
 
     # Build the payload: common fields + any extra args passed by the caller.
     # Extra args should be jq flag pairs like: --arg key "value" or --argjson key '{"a":1}'
-    jq -nc \
+    #
+    # MSYS2_ARG_CONV_EXCL stops Git Bash rewriting path-like arguments into
+    # Windows paths, which corrupted cwd and transcript_path (e.g.
+    # "/Users/alice/p" -> "D:/.../Users/alice/p"). jq only sees opaque strings.
+    # Ignored on Linux/macOS.
+    MSYS2_ARG_CONV_EXCL='*' jq -nc \
         --argjson v "$protocol_version" \
         --arg agent "claude" \
         --arg event "$event" \

@@ -320,6 +320,83 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "--- Windows: MSYS2 must not rewrite payload paths ---"
+
+# Git Bash rewrites path-like arguments before the child process sees them, so
+# jq received mangled values. Both the extracted cwd and caller --arg paths
+# must survive.
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/Users/alice/my-project"}' "stop")
+assert_json_field "cwd not rewritten" "$PAYLOAD" ".cwd" "/Users/alice/my-project"
+
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/Users/alice/p"}' "stop" \
+    --arg transcript_path "/tmp/transcript.jsonl")
+assert_json_field "transcript_path not rewritten" \
+    "$PAYLOAD" ".transcript_path" "/tmp/transcript.jsonl"
+
+echo ""
+echo "--- Windows: detached hooks emit nothing on stderr ---"
+
+# No controlling terminal on this process, so a /dev/tty write fails with ENXIO.
+# Reproduced by piping stdin and capturing stderr; the hooks must stay silent.
+NO_TTY_INPUT='{"session_id":"s1","cwd":"/Users/alice/p","stop_hook_active":false,"error":"rate_limit","last_assistant_message":"e","notification_type":"idle_prompt","message":"m","prompt":"p","tool_name":"Bash","tool_input":{"command":"ls"}}'
+ERR_FILE="$(mktemp)"
+
+for HOOK in on-stop.sh on-stop-failure.sh on-notification.sh on-session-start.sh \
+            on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
+    : > "$ERR_FILE"
+    echo "$NO_TTY_INPUT" | \
+        WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+        WARP_CLIENT_VERSION=v0.2026.04.01.stable_01 \
+        bash "$HOOK_DIR/$HOOK" >/dev/null 2>"$ERR_FILE"
+    assert_eq "$HOOK: stderr empty" "0" "$(wc -c < "$ERR_FILE" | tr -d ' ')"
+done
+
+# All three version-dispatch branches of emit_terminal_sequence, no tty.
+for CASE in "unknown:" "old:2.1.100" "new:2.1.141"; do
+    : > "$ERR_FILE"
+    CLAUDE_CODE_VERSION="${CASE#*:}" bash -c \
+        "source '$SCRIPT_DIR/emit-terminal-sequence.sh'; emit_terminal_sequence 'SEQ'" \
+        >/dev/null 2>"$ERR_FILE"
+    assert_eq "${CASE%%:**} version: stderr empty" "0" "$(wc -c < "$ERR_FILE" | tr -d ' ')"
+done
+
+# The write must stay silent when it fails, and must report failure so the
+# caller can fall back to the JSON field.
+: > "$ERR_FILE"
+{ _tty_write "seq"; } >/dev/null 2>"$ERR_FILE" || true
+assert_eq "_tty_write: stderr empty on failed write" "0" "$(wc -c < "$ERR_FILE" | tr -d ' ')"
+
+# Control: the old unguarded pattern (stderr inherits the terminal) must still
+# leak where no usable tty exists, otherwise the assertion above is vacuous.
+if [ -e /dev/tty ] && ! _tty_write ""; then
+    assert_eq "control: unguarded write still leaks (test is meaningful)" "nonzero" \
+        "$({ printf 'x' > /dev/tty; } 2>"$ERR_FILE"; \
+           if [ "$(wc -c < "$ERR_FILE" | tr -d ' ')" -gt 0 ]; then echo nonzero; else echo zero; fi)"
+fi
+
+rm -f "$ERR_FILE"
+
+echo ""
+echo "--- Missing jq degrades silently ---"
+
+# jq is required by build_payload and emit_terminal_sequence; without it both
+# must stay quiet rather than emitting "jq: command not found" as a hook error.
+NO_JQ_PATH="/usr/bin:/bin"
+ERR_FILE="$(mktemp)"
+
+: > "$ERR_FILE"
+BODY=$(PATH="$NO_JQ_PATH" bash -c "source '$SCRIPT_DIR/build-payload.sh'; build_payload '{\"cwd\":\"/tmp/x\"}' stop" 2>"$ERR_FILE")
+assert_eq "build_payload without jq: stderr empty" "0" "$(wc -c < "$ERR_FILE" | tr -d ' ')"
+assert_eq "build_payload without jq: empty body" "" "$BODY"
+
+: > "$ERR_FILE"
+PATH="$NO_JQ_PATH" bash -c \
+    "source '$SCRIPT_DIR/emit-terminal-sequence.sh'; CLAUDE_CODE_VERSION=2.1.141 emit_terminal_sequence 'SEQ'" \
+    >/dev/null 2>"$ERR_FILE"
+assert_eq "emit_terminal_sequence without jq: stderr empty" "0" "$(wc -c < "$ERR_FILE" | tr -d ' ')"
+rm -f "$ERR_FILE"
+
 # --- Summary ---
 
 echo ""

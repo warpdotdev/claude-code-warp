@@ -20,9 +20,21 @@
 # When the sequence is delivered via /dev/tty (side effect), nothing is printed
 # to stdout. When it must go through terminalSequence, a JSON object is printed
 # to stdout — the caller should ensure this reaches the hook's stdout.
+#
+# On Windows Git Bash / MSYS2 a /dev/tty node exists but opening it fails with
+# ENXIO when the process has no controlling terminal, so the node's presence
+# says nothing about whether it is usable.
 
 # The first Claude Code version that supports the terminalSequence output field.
 TERMINAL_SEQUENCE_MIN_VERSION="2.1.141"
+
+# Write $1 to the controlling terminal; returns 1 if there isn't a usable one.
+# stderr is redirected *before* the open: in `> /dev/tty 2>/dev/null` the open
+# runs while stderr is still inherited, so a failure would escape. Probing and
+# writing in one step also avoids a check-then-use gap if the tty goes away.
+_tty_write() {
+    printf '%s' "$1" 2>/dev/null > /dev/tty
+}
 
 # Compare two dotted version strings (e.g. "2.1.141" >= "2.1.141").
 # Returns 0 (true) if $1 >= $2, 1 (false) otherwise.
@@ -59,6 +71,10 @@ emit_terminal_sequence() {
     local seq="$1"
     [ -z "$seq" ] && return 0
 
+    # Without jq the JSON fallback is impossible, so stay silent rather than
+    # leaking "jq: command not found" as a hook error.
+    command -v jq &>/dev/null || return 0
+
     # Classify the running Claude Code version, if we can.
     local raw="${CLAUDE_CODE_VERSION:-}"
     local ver=""
@@ -67,20 +83,20 @@ emit_terminal_sequence() {
     if [ -n "$ver" ]; then
         if _version_at_least "$ver" "$TERMINAL_SEQUENCE_MIN_VERSION"; then
             # Known new Claude Code — use the structured output field.
-            jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
+            MSYS2_ARG_CONV_EXCL='*' jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
         else
             # Known-old Claude Code — /dev/tty is the only safe path.
             # Emitting terminalSequence here would be rejected by the Stop
             # hook validator as an unknown field.
-            printf '%s' "$seq" > /dev/tty 2>/dev/null || true
+            _tty_write "$seq" || true
         fi
         return 0
     fi
 
     # Unknown Claude Code version — try /dev/tty, fall back to JSON
     # as a best-effort attempt for new CC without version detection.
-    if printf '%s' "$seq" > /dev/tty 2>/dev/null; then
+    if _tty_write "$seq"; then
         return 0
     fi
-    jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
+    MSYS2_ARG_CONV_EXCL='*' jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
 }
