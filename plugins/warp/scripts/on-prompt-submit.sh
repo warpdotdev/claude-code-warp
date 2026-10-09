@@ -22,7 +22,16 @@ if [ -n "$QUERY" ] && [ ${#QUERY} -gt 200 ]; then
     QUERY="${QUERY:0:197}..."
 fi
 
-BODY=$(build_payload "$INPUT" "prompt_submit" \
-    --arg query "$QUERY")
+# Respect Claude Code's opt-out for terminal title updates
+if [ "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:-0}" = "1" ]; then
+    QUERY=""
+fi
+
+PAYLOAD_ARGS=()
+if [ -n "$QUERY" ]; then
+    PAYLOAD_ARGS=(--arg query "$QUERY")
+fi
+
+BODY=$(build_payload "$INPUT" "prompt_submit" "${PAYLOAD_ARGS[@]}")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
