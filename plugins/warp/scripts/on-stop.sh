@@ -55,6 +55,7 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
         [.[] | select(.type == "assistant" and .message.content)] | last |
         [.message.content[] | select(.type == "text") | .text] | join(" ")
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    RESPONSE=$(strip_markdown "$RESPONSE")
 
     # Truncate for notification display
     if [ -n "$QUERY" ] && [ ${#QUERY} -gt 200 ]; then

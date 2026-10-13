@@ -313,6 +313,16 @@ assert_eq "legacy Warp shows active message" \
     "$SYS_MSG"
 
 echo ""
+echo "--- Markdown is stripped from notification text ---"
+assert_eq "bold and code removed" "Use master now" "$(strip_markdown 'Use **`master`** now')"
+assert_eq "headings and bullets removed, newlines folded" "Title one two" "$(strip_markdown $'## Title\n\n- one\n* two')"
+assert_eq "numbered list removed" "first second" "$(strip_markdown $'1. first\n2. second')"
+assert_eq "link keeps its text" "see the docs" "$(strip_markdown 'see [the docs](https://example.com)')"
+assert_eq "underscores kept" "call __init__ and snake_case" "$(strip_markdown 'call __init__ and snake_case')"
+assert_eq "plain text unchanged" 'It means greeting. Use: printf("hello")' "$(strip_markdown 'It means greeting. Use: printf("hello")')"
+assert_eq "empty input" "" "$(strip_markdown '')"
+
+echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"
 
 for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do

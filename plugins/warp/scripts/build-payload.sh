@@ -27,6 +27,18 @@ negotiate_protocol_version() {
     fi
 }
 
+# Notification bodies are shown as plain text, so markdown syntax from the
+# agent's reply appears literally. Removes the common markers and folds
+# newlines into spaces. Underscores are left alone so identifiers like
+# __init__ survive.
+strip_markdown() {
+    jq -rn --arg s "$1" '$s
+        | gsub("(?m)^\\s*(#+|[-*+]|\\d+\\.)\\s+"; "")
+        | gsub("\\*\\*|`"; "")
+        | gsub("\\[(?<t>[^\\]]+)\\]\\([^)]*\\)"; "\(.t)")
+        | gsub("\\s*\\n+\\s*"; " ")'
+}
+
 build_payload() {
     local input="$1"
     local event="$2"
