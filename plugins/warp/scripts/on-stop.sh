@@ -12,6 +12,7 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/extract-query.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -30,25 +31,10 @@ sleep 0.3
 QUERY=""
 RESPONSE=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-    # Get the last human prompt from the transcript.
-    # "user" type messages include both human prompts and tool-result messages.
-    # Human prompts have content that is either a plain string or an array
-    # containing {type:"text"} blocks. Tool-result messages have content arrays
-    # containing only {type:"tool_result"} blocks. We filter to messages that
-    # have at least one "text" block (or are a plain string).
-    QUERY=$(jq -rs '
-        [
-            .[] | select(.type == "user") |
-            if .message.content | type == "string" then .
-            elif [.message.content[] | select(.type == "text")] | length > 0 then .
-            else empty
-            end
-        ] | last |
-        if .message.content | type == "array"
-        then [.message.content[] | select(.type == "text") | .text] | join(" ")
-        else .message.content // empty
-        end
-    ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    # Get the last human prompt from the transcript. See extract-query.sh —
+    # "user" entries also cover tool results and Claude Code's own injected
+    # turns, which must not reach the notification.
+    QUERY=$(extract_query "$TRANSCRIPT_PATH")
 
     # Get the last assistant response
     RESPONSE=$(jq -rs '
