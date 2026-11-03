@@ -68,7 +68,17 @@ fi
 # Claude Code wakes the agent again when a background task finishes or a session cron fires,
 # so a Stop with either pending is a pause rather than the end of the session. Default to 0
 # so --argjson always receives a number and the notification is never dropped.
-BACKGROUND_TASK_COUNT=$(echo "$INPUT" | jq -r '.background_tasks // [] | length' 2>/dev/null)
+#
+# Agent Teams teammates are counted apart. The Stop input lists a teammate as "running" for as
+# long as it exists, including while it sits idle waiting for a message, and does not say which
+# teammates are idle. A working teammate wakes the agent when it reports back, but an idle one
+# never does, so counting teammates as background tasks kept a finished session "in progress"
+# until every teammate was stopped. The cost is the other way round: a session that ends its turn
+# while a teammate is still working is reported as done, and the teammate's report then starts a
+# new turn that ends in another Stop. Entries that are not objects keep counting as background
+# tasks, as they did before teammates were told apart.
+BACKGROUND_TASK_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | select(type != "object" or .type != "teammate")] | length' 2>/dev/null)
+TEAMMATE_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | objects | select(.type == "teammate")] | length' 2>/dev/null)
 SESSION_CRON_COUNT=$(echo "$INPUT" | jq -r '.session_crons // [] | length' 2>/dev/null)
 
 BODY=$(build_payload "$INPUT" "stop" \
@@ -76,6 +86,7 @@ BODY=$(build_payload "$INPUT" "stop" \
     --arg response "$RESPONSE" \
     --arg transcript_path "$TRANSCRIPT_PATH" \
     --argjson background_task_count "${BACKGROUND_TASK_COUNT:-0}" \
+    --argjson teammate_count "${TEAMMATE_COUNT:-0}" \
     --argjson session_cron_count "${SESSION_CRON_COUNT:-0}")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
