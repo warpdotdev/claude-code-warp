@@ -320,6 +320,22 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "--- Permission request with a large tool_input ---"
+
+# A Write of a large file puts the whole file in tool_input.content. The payload must stay
+# small enough to pass as an argument, and the notification body must not be empty.
+BIG_INPUT=$(jq -nc --rawfile content <(head -c 1100000 /dev/zero | tr '\0' 'x') \
+    '{session_id:"s1",cwd:"/tmp/proj",tool_name:"Write",tool_input:{file_path:"/tmp/proj/big.txt",content:$content}}')
+OUTPUT=$(echo "$BIG_INPUT" | WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+    WARP_CLIENT_VERSION="v0.2026.04.01.08.00.stable_00" CLAUDE_CODE_VERSION="2.1.141" \
+    bash "$HOOK_DIR/on-permission-request.sh" 2>/dev/null)
+assert_eq "large tool_input hook exits 0" "0" "$?"
+BODY=$(echo "$OUTPUT" | jq -r '.terminalSequence // empty' | sed -e 's/^.*warp:\/\/cli-agent;//' -e 's/.$//')
+assert_json_field "large tool_input event is permission_request" "$BODY" ".event" "permission_request"
+assert_json_field "large tool_input keeps file_path" "$BODY" ".tool_input.file_path" "/tmp/proj/big.txt"
+assert_json_field "large tool_input content is truncated" "$BODY" ".tool_input.content | length" "1000"
+
 # --- Summary ---
 
 echo ""
