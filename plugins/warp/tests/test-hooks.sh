@@ -323,7 +323,7 @@ done
 echo ""
 echo "--- Stop pending-work counts ---"
 
-# Runs on-stop.sh as Claude Code would on a structured-capable Warp and prints the JSON payload it sent
+# Prints the payload on-stop.sh sends to Warp for the hook input in $1
 stop_payload() {
     local seq
     seq=$(echo "$1" | WARP_CLI_AGENT_PROTOCOL_VERSION=1 WARP_CLIENT_VERSION="v0.2026.09.01.00.00.dev_00" \
@@ -358,6 +358,11 @@ assert_json_field "missing background_tasks: stop still sent" "$PAYLOAD" ".event
 assert_json_field "missing background_tasks: background_task_count is 0" "$PAYLOAD" ".background_task_count" "0"
 assert_json_field "missing background_tasks: teammate_count is 0" "$PAYLOAD" ".teammate_count" "0"
 assert_json_field "missing background_tasks: session_cron_count is 0" "$PAYLOAD" ".session_cron_count" "0"
+
+PAYLOAD=$(stop_payload '{"session_id":"s1","cwd":"/tmp/p","background_tasks":"abc"}')
+assert_json_field "non-array background_tasks: stop still sent" "$PAYLOAD" ".event" "stop"
+assert_json_field "non-array background_tasks: background_task_count is 0" "$PAYLOAD" ".background_task_count" "0"
+assert_json_field "non-array background_tasks: teammate_count is 0" "$PAYLOAD" ".teammate_count" "0"
 
 # --- Summary ---
 

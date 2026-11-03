@@ -69,16 +69,11 @@ fi
 # so a Stop with either pending is a pause rather than the end of the session. Default to 0
 # so --argjson always receives a number and the notification is never dropped.
 #
-# Agent Teams teammates are counted apart. The Stop input lists a teammate as "running" for as
-# long as it exists, including while it sits idle waiting for a message, and does not say which
-# teammates are idle. A working teammate wakes the agent when it reports back, but an idle one
-# never does, so counting teammates as background tasks kept a finished session "in progress"
-# until every teammate was stopped. The cost is the other way round: a session that ends its turn
-# while a teammate is still working is reported as done, and the teammate's report then starts a
-# new turn that ends in another Stop. Entries that are not objects keep counting as background
-# tasks, as they did before teammates were told apart.
+# Teammates are counted apart: background_tasks lists a teammate as "running" even while it
+# sits idle, and an idle teammate never wakes the agent. Non-objects are type-checked first
+# because `.type` on a string aborts jq and would zero the whole count.
 BACKGROUND_TASK_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | select(type != "object" or .type != "teammate")] | length' 2>/dev/null)
-TEAMMATE_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | objects | select(.type == "teammate")] | length' 2>/dev/null)
+TEAMMATE_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | select(type == "object" and .type == "teammate")] | length' 2>/dev/null)
 SESSION_CRON_COUNT=$(echo "$INPUT" | jq -r '.session_crons // [] | length' 2>/dev/null)
 
 BODY=$(build_payload "$INPUT" "stop" \
