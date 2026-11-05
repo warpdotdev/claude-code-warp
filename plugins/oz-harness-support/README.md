@@ -24,10 +24,13 @@ The plugin ships skills the agent uses to talk to the Oz platform:
 
 ### factory-files is a mirror
 
-`skills/factory-files` is a byte-for-byte copy of
+`skills/factory-files` was initially copied from
 `resources/bundled/skills/factory-files` in
 [warpdotdev/warp](https://github.com/warpdotdev/warp), mirrored at commit
-`f6f4ceac8`. Warp bundles that skill for its own clients; Claude Code loads
+`f6f4ceac8`. The default-automation reference and its entry-point instruction
+are refreshed from [`1119be67a`](https://github.com/warpdotdev/warp/commit/1119be67a8d9574418bf0f2a2cbdca127551ccfe);
+this is not a full resync of the remaining skill files.
+Warp bundles that skill for its own clients; Claude Code loads
 filesystem skills from this plugin instead, so it is copied here rather than
 resolved from a bundle. Change it in `warpdotdev/warp` and re-mirror; edits
 made here are lost on the next sync.
