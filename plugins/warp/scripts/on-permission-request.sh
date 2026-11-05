@@ -15,6 +15,10 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# The user has to answer this, so the rest of the turn is theirs too
+source "$SCRIPT_DIR/turn-origin.sh"
+turn_mark_engaged "$INPUT"
+
 # Extract permission-request-specific fields
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"' 2>/dev/null)
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null)

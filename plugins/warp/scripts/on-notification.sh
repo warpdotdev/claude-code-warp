@@ -18,6 +18,11 @@ INPUT=$(cat)
 
 # Extract notification-specific fields
 NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // "unknown"' 2>/dev/null)
+
+# agent_needs_input always reaches the user; idle_prompt after a turn they did not start does not
+source "$SCRIPT_DIR/turn-origin.sh"
+[ "$NOTIF_TYPE" = "idle_prompt" ] && turn_is_silent "$INPUT" && exit 0
+
 MSG=$(echo "$INPUT" | jq -r '.message // "Input needed"' 2>/dev/null)
 [ -z "$MSG" ] && MSG="Input needed"
 if [ ${#MSG} -gt 120 ]; then

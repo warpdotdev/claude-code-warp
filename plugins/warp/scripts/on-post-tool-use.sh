@@ -16,6 +16,9 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
+source "$SCRIPT_DIR/turn-origin.sh"
+turn_is_silent "$INPUT" && exit 0
+
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 
 BODY=$(build_payload "$INPUT" "tool_complete" \

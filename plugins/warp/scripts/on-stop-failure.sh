@@ -16,6 +16,9 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
+source "$SCRIPT_DIR/turn-origin.sh"
+turn_end "$INPUT"
+
 # Extract the error type (e.g. "rate_limit") and human-readable message.
 ERROR_TYPE=$(echo "$INPUT" | jq -r '.error // empty' 2>/dev/null)
 ERROR_MESSAGE=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)

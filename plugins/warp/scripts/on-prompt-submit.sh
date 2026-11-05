@@ -16,6 +16,11 @@ source "$SCRIPT_DIR/build-payload.sh"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# Turns Claude Code injects stay invisible to Warp; a turn Warp hears about always gets its stop
+source "$SCRIPT_DIR/turn-origin.sh"
+turn_prompt_is_injected "$INPUT" && exit 0
+turn_mark_engaged "$INPUT"
+
 # Extract the user's prompt
 QUERY=$(echo "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)
 if [ -n "$QUERY" ] && [ ${#QUERY} -gt 200 ]; then

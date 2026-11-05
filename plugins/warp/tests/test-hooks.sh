@@ -56,7 +56,7 @@ MARKETPLACE_VERSION=$(jq -r '.plugins[] | select(.name == "warp") | .version' \
     "$REPO_DIR/.claude-plugin/marketplace.json")
 NOTIFICATION_MATCHER=$(jq -r '.hooks.Notification[0].matcher' "$PLUGIN_DIR/hooks/hooks.json")
 
-assert_eq "plugin version bumped" "2.4.0" "$PLUGIN_VERSION"
+assert_eq "plugin version bumped" "2.4.1" "$PLUGIN_VERSION"
 assert_eq "marketplace version matches plugin" "$PLUGIN_VERSION" "$MARKETPLACE_VERSION"
 assert_eq "notification matcher includes input-required events" \
     "idle_prompt|agent_needs_input" \
@@ -319,6 +319,117 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
+
+echo ""
+echo "=== turn-origin.sh ==="
+
+source "$SCRIPT_DIR/turn-origin.sh"
+TURN_TMP=$(mktemp -d)
+TURN_STATE_DIR="$TURN_TMP/state"
+TRANSCRIPT="$TURN_TMP/transcript.jsonl"
+: > "$TRANSCRIPT"
+TURN_INPUT="{\"session_id\":\"sess-turn\",\"transcript_path\":\"$TRANSCRIPT\"}"
+
+append() { printf '%s\n' "$1" >> "$TRANSCRIPT"; }
+assert_turn() {
+    local actual=notify
+    turn_is_silent "${3:-$TURN_INPUT}" && actual=silent
+    assert_eq "$1" "$2" "$actual"
+}
+
+echo ""
+echo "--- Turn started by the user ---"
+append '{"type":"user","message":{"content":"fix the bug"},"origin":{"kind":"human"},"turnOrigin":"human"}'
+append '{"type":"user","message":{"content":[{"type":"tool_result","content":"Another Claude session sent a message"}]}}'
+assert_turn "typed prompt notifies" notify
+append '{"type":"attachment","attachment":{"type":"queued_command","origin":{"kind":"channel"},"prompt":"<channel>"}}'
+assert_turn "channel event queued mid-turn keeps the user's turn" notify
+
+echo ""
+echo "--- Turns another session, a channel or a background task started ---"
+append '{"type":"user","message":{"content":"Another Claude session sent a message:\n<teammate-message teammate_id=\"reviewer\">\nTask completed."}}'
+assert_turn "Agent Teams teammate message is silent" silent
+append '{"type":"user","message":{"content":"<channel source=\"ci\">"},"origin":{"kind":"channel"},"turnOrigin":"peer"}'
+assert_turn "channel message is silent" silent
+append '{"type":"user","message":{"content":"<task-notification>"},"origin":{"kind":"task-notification"},"turnOrigin":"task_notification"}'
+assert_turn "background task notification is silent" silent
+append '{"type":"user","isMeta":true,"message":{"content":[{"type":"text","text":"skill body"}]}}'
+assert_turn "meta entries do not change the turn" silent
+
+echo ""
+echo "--- The user engages with a turn they did not start ---"
+append '{"type":"attachment","attachment":{"type":"queued_command","origin":{"kind":"human"},"prompt":"also check X"}}'
+assert_turn "prompt typed mid-turn notifies" notify
+append '{"type":"user","message":{"content":"<task-notification>"},"origin":{"kind":"task-notification"},"turnOrigin":"task_notification"}'
+assert_turn "next background turn is silent again" silent
+turn_mark_engaged "$TURN_INPUT"
+assert_turn "permission request makes the turn notify" notify
+turn_end "$TURN_INPUT"
+assert_turn "engagement ends with the turn" silent
+append '{"type":"user","message":{"content":"<channel source=\"ci\">"},"origin":{"kind":"channel"},"turnOrigin":"peer"}'
+assert_turn "next channel turn is silent" silent
+
+echo ""
+echo "--- Injected prompts ---"
+assert_injected() {
+    local actual=typed
+    turn_prompt_is_injected "$(jq -nc --arg p "$2" '{prompt: $p}')" && actual=injected
+    assert_eq "$1" "$3" "$actual"
+}
+assert_injected "teammate message" $'Another Claude session sent a message:\n<teammate-message teammate_id="a">' injected
+assert_injected "channel event" '<channel source="ci" kind="pr-checks">' injected
+assert_injected "background task report" $'<task-notification>\n<task-id>b1</task-id>' injected
+assert_injected "cross-session message" '<cross-session-message from="uds:/tmp/x.sock">' injected
+assert_injected "typed prompt" 'fix the <channel> parser' typed
+assert_injected "empty prompt" '' typed
+
+echo ""
+echo "--- Fails open ---"
+append '{"type":"user","message":{"content":"next"},"origin":{"kind":"human"},"turnOrigin":"human"}'
+printf '%s' '{"type":"user","message":{"content":"Another Claude session sent a message: x' >> "$TRANSCRIPT"
+assert_turn "half-written last line is not trusted" notify
+printf '%s\n' '"}}' >> "$TRANSCRIPT"
+assert_turn "the same line once complete is read" silent
+assert_turn "missing transcript notifies" notify "{\"session_id\":\"sess-gone\",\"transcript_path\":\"$TURN_TMP/missing.jsonl\"}"
+assert_turn "missing session id notifies" notify "{\"transcript_path\":\"$TRANSCRIPT\"}"
+printf '%s\n' '{"type":"user","message":{"content":"prompt from a Claude Code without origin fields"}}' > "$TURN_TMP/old.jsonl"
+assert_turn "transcript without origin fields notifies" notify "{\"session_id\":\"sess-old\",\"transcript_path\":\"$TURN_TMP/old.jsonl\"}"
+
+echo ""
+echo "--- Hooks skip silent turns ---"
+
+# Runs a hook as Claude Code would on a structured-capable Warp and prints the JSON payload it sent
+run_structured_hook() {
+    local seq
+    seq=$(echo "$2" | TMPDIR="$TURN_TMP" WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+        WARP_CLIENT_VERSION="v0.2026.09.01.00.00.dev_00" CLAUDE_CODE_VERSION="2.1.200" \
+        bash "$HOOK_DIR/$1" 2>/dev/null | jq -r '.terminalSequence // empty')
+    seq="${seq#*warp://cli-agent;}"
+    printf '%s' "${seq%$'\a'}"
+}
+
+HOOK_TRANSCRIPT="$TURN_TMP/hook.jsonl"
+HOOK_INPUT="{\"session_id\":\"sess-hook\",\"cwd\":\"/tmp/p\",\"transcript_path\":\"$HOOK_TRANSCRIPT\",\"notification_type\":\"idle_prompt\",\"tool_name\":\"Bash\"}"
+printf '%s\n' '{"type":"user","message":{"content":"Another Claude session sent a message:\n<teammate-message teammate_id=\"reviewer\">done"}}' > "$HOOK_TRANSCRIPT"
+for HOOK in on-stop.sh on-post-tool-use.sh on-notification.sh; do
+    assert_eq "$HOOK sends nothing for a teammate turn" "" "$(run_structured_hook "$HOOK" "$HOOK_INPUT")"
+done
+PAYLOAD=$(run_structured_hook on-notification.sh "${HOOK_INPUT/idle_prompt/agent_needs_input}")
+assert_json_field "agent_needs_input still notifies in a teammate turn" "$PAYLOAD" ".event" "agent_needs_input"
+printf '%s\n' '{"type":"user","message":{"content":"fix the bug"},"origin":{"kind":"human"},"turnOrigin":"human"}' >> "$HOOK_TRANSCRIPT"
+PAYLOAD=$(run_structured_hook on-stop.sh "$HOOK_INPUT")
+assert_json_field "on-stop.sh notifies for the user's turn" "$PAYLOAD" ".query" "fix the bug"
+
+INJECTED_INPUT=$(echo "$HOOK_INPUT" | jq -c '.prompt = "<task-notification>\n<task-id>b1</task-id>"')
+assert_eq "on-prompt-submit.sh sends nothing for an injected prompt" "" "$(run_structured_hook on-prompt-submit.sh "$INJECTED_INPUT")"
+TYPED_INPUT=$(echo "$HOOK_INPUT" | jq -c '.prompt = "every hour: check the deploy"')
+PAYLOAD=$(run_structured_hook on-prompt-submit.sh "$TYPED_INPUT")
+assert_json_field "on-prompt-submit.sh reports a typed-looking prompt" "$PAYLOAD" ".event" "prompt_submit"
+printf '%s\n' '{"type":"user","message":{"content":"every hour: check the deploy"},"origin":{"kind":"scheduled"},"turnOrigin":"scheduled"}' >> "$HOOK_TRANSCRIPT"
+PAYLOAD=$(run_structured_hook on-stop.sh "$HOOK_INPUT")
+assert_json_field "a turn Warp was told about still gets its stop" "$PAYLOAD" ".event" "stop"
+assert_eq "idle_prompt after that turn is silent" "" "$(run_structured_hook on-notification.sh "$HOOK_INPUT")"
+rm -rf "$TURN_TMP"
 
 # --- Summary ---
 

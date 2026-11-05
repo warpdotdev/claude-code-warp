@@ -10,7 +10,7 @@
       "name": "warp",
       "description": "Native Warp notifications when Claude completes tasks or needs input",
       "source": "./plugins/warp",
-      "version": "2.4.0",
+      "version": "2.4.1",
       "category": "productivity",
       "tags": ["notifications", "terminal", "warp"]
     },

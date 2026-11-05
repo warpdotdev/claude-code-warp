@@ -22,6 +22,13 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
     exit 0
 fi
 
+# A turn another session, a channel or a background task started is not the user's task finishing
+source "$SCRIPT_DIR/turn-origin.sh"
+SILENT_TURN=false
+turn_is_silent "$INPUT" && SILENT_TURN=true
+turn_end "$INPUT"
+[ "$SILENT_TURN" = "true" ] && exit 0
+
 # Extract the last user prompt and assistant response from the transcript.
 # Small delay to allow Claude Code to flush the current turn to the transcript file.
 # The Stop hook fires before the transcript is fully written.

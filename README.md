@@ -55,6 +55,8 @@ The plugin registers lifecycle hooks including:
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
 - **PostToolUse** — fires when a tool call completes, signaling the session is no longer blocked
 
+Turns that Claude Code starts on its own (a teammate or another session messaging this one, a channel event, a background task reporting back) send no events, so they never raise a notification or change the session status. If you answer a permission request or type a prompt during such a turn, the turn is reported as usual.
+
 ### Legacy Support
 
 Older Warp clients that predate the structured notification protocol are still supported — they receive plain-text notifications for SessionStart, Stop, and Notification hooks.
