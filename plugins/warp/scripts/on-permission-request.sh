@@ -17,7 +17,16 @@ INPUT=$(cat)
 
 # Extract permission-request-specific fields
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"' 2>/dev/null)
-TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
+# Long string values (e.g. the full file content of a Write) are truncated: the payload is
+# passed to jq and warp-notify.sh as a single argv string, and above the OS limit
+# (128 KiB per argument on Linux) the exec fails with "Argument list too long".
+TOOL_INPUT=$(echo "$INPUT" | jq -c '
+    def trunc: if type == "string" and length > 1000 then .[0:997] + "..."
+        elif type == "object" then map_values(trunc)
+        elif type == "array" then map(trunc)
+        else . end;
+    .tool_input // {} | trunc
+' 2>/dev/null)
 # Fallback to empty object if jq failed or returned empty
 [ -z "$TOOL_INPUT" ] && TOOL_INPUT='{}'
 
