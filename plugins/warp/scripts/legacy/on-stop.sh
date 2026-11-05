@@ -3,6 +3,7 @@
 # Sends a Warp notification when Claude completes a task
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../transcript-tail.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -15,16 +16,18 @@ MSG="Task completed"
 
 # Try to extract prompt and response from the transcript (JSONL format)
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-    # Get the first user prompt
-    PROMPT=$(jq -rs '
-        [.[] | select(.type == "user")] | first | .message.content // empty
+    # Get the first user prompt. Stream records and stop at the first match,
+    # so memory stays at one record however long the transcript is.
+    PROMPT=$(jq -rn '
+        first(inputs | select(.type == "user")) | .message.content // empty
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
     
-    # Get the last assistant response
-    RESPONSE=$(jq -rs '
+    # Get the last assistant response from a bounded tail of the transcript
+    RESPONSE_FILTER='
         [.[] | select(.type == "assistant" and .message.content)] | last |
         [.message.content[] | select(.type == "text") | .text] | join(" ")
-    ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    '
+    RESPONSE=$(transcript_tail "$TRANSCRIPT_PATH" "$TRANSCRIPT_TAIL_BYTES" | jq -rs "$RESPONSE_FILTER" 2>/dev/null)
     
     if [ -n "$PROMPT" ] && [ -n "$RESPONSE" ]; then
         # Truncate prompt to 50 chars

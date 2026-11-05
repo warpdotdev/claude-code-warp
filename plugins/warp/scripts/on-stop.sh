@@ -12,6 +12,7 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/transcript-tail.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -36,7 +37,10 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     # containing {type:"text"} blocks. Tool-result messages have content arrays
     # containing only {type:"tool_result"} blocks. We filter to messages that
     # have at least one "text" block (or are a plain string).
-    QUERY=$(jq -rs '
+    #
+    # Both values sit near the end, so read a bounded tail instead of the whole
+    # transcript, and retry with a larger one only when no prompt is in the first.
+    QUERY_FILTER='
         [
             .[] | select(.type == "user") |
             if .message.content | type == "string" then .
@@ -48,13 +52,19 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
         then [.message.content[] | select(.type == "text") | .text] | join(" ")
         else .message.content // empty
         end
-    ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    '
+    QUERY=$(transcript_tail "$TRANSCRIPT_PATH" "$TRANSCRIPT_TAIL_BYTES" | jq -rs "$QUERY_FILTER" 2>/dev/null)
+    if [ -z "$QUERY" ] && transcript_larger_than "$TRANSCRIPT_PATH" "$TRANSCRIPT_TAIL_BYTES"; then
+        QUERY=$(transcript_tail "$TRANSCRIPT_PATH" "$TRANSCRIPT_TAIL_MAX_BYTES" | jq -rs "$QUERY_FILTER" 2>/dev/null)
+    fi
 
-    # Get the last assistant response
-    RESPONSE=$(jq -rs '
+    # Get the last assistant response. The last assistant record is always at
+    # the very end, so the first window is enough.
+    RESPONSE_FILTER='
         [.[] | select(.type == "assistant" and .message.content)] | last |
         [.message.content[] | select(.type == "text") | .text] | join(" ")
-    ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    '
+    RESPONSE=$(transcript_tail "$TRANSCRIPT_PATH" "$TRANSCRIPT_TAIL_BYTES" | jq -rs "$RESPONSE_FILTER" 2>/dev/null)
 
     # Truncate for notification display
     if [ -n "$QUERY" ] && [ ${#QUERY} -gt 200 ]; then

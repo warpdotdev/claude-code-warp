@@ -56,7 +56,7 @@ MARKETPLACE_VERSION=$(jq -r '.plugins[] | select(.name == "warp") | .version' \
     "$REPO_DIR/.claude-plugin/marketplace.json")
 NOTIFICATION_MATCHER=$(jq -r '.hooks.Notification[0].matcher' "$PLUGIN_DIR/hooks/hooks.json")
 
-assert_eq "plugin version bumped" "2.4.0" "$PLUGIN_VERSION"
+assert_eq "plugin version bumped" "2.4.1" "$PLUGIN_VERSION"
 assert_eq "marketplace version matches plugin" "$PLUGIN_VERSION" "$MARKETPLACE_VERSION"
 assert_eq "notification matcher includes input-required events" \
     "idle_prompt|agent_needs_input" \
@@ -319,6 +319,57 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
+
+echo ""
+echo "--- Transcript tail ---"
+
+source "$SCRIPT_DIR/transcript-tail.sh"
+TAIL_TMP=$(mktemp -d)
+trap 'rm -rf "$TAIL_TMP"' EXIT
+
+prompt_line() { jq -nc --arg t "$1" '{type:"user",message:{role:"user",content:$t}}'; }
+reply_line() { jq -nc --arg t "$1" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}'; }
+# About 1 MB of tool results, the bulk of a long session's transcript.
+FILLER=$(jq -nc --arg c "$(head -c 1000 /dev/zero | tr '\0' x)" \
+    '{type:"user",message:{role:"user",content:[{type:"tool_result",tool_use_id:"t1",content:$c}]}}')
+filler_mb() { yes "$FILLER" | head -n $(($1 * 1000)); }
+
+# Runs on-stop.sh on a transcript and prints the structured payload it emits.
+run_stop_hook() {
+    local seq
+    seq=$(jq -nc --arg p "$1" '{session_id:"s1",cwd:"/tmp/proj",transcript_path:$p}' \
+        | WARP_CLI_AGENT_PROTOCOL_VERSION=1 WARP_CLIENT_VERSION=v0.2026.09.30.08.29.stable_01 \
+          CLAUDE_CODE_VERSION=2.1.283 bash "$SCRIPT_DIR/on-stop.sh" 2>/dev/null \
+        | jq -r '.terminalSequence // empty' 2>/dev/null)
+    seq=${seq#*warp://cli-agent;}
+    printf '%s' "${seq%$'\a'}"
+}
+
+{ prompt_line "first prompt"; reply_line "first reply"; } > "$TAIL_TMP/small.jsonl"
+assert_eq "small transcript is read whole" "2" "$(transcript_tail "$TAIL_TMP/small.jsonl" "$TRANSCRIPT_TAIL_BYTES" | wc -l | tr -d ' ')"
+
+{ prompt_line "old prompt"; filler_mb 6; prompt_line "recent prompt"; reply_line "recent reply"; } > "$TAIL_TMP/large.jsonl"
+FIRST_LINE=$(transcript_tail "$TAIL_TMP/large.jsonl" "$TRANSCRIPT_TAIL_BYTES" | head -n 1)
+echo "$FIRST_LINE" | jq -e . >/dev/null 2>&1
+assert_eq "tail starts on a whole record" "0" "$?"
+TAIL_SIZE=$(transcript_tail "$TAIL_TMP/large.jsonl" "$TRANSCRIPT_TAIL_BYTES" | wc -c | tr -d ' ')
+assert_eq "tail stays within the window" "true" "$([ "$TAIL_SIZE" -le "$TRANSCRIPT_TAIL_BYTES" ] && echo true || echo false)"
+PAYLOAD=$(run_stop_hook "$TAIL_TMP/large.jsonl")
+assert_json_field "stop query from the tail" "$PAYLOAD" ".query" "recent prompt"
+assert_json_field "stop response from the tail" "$PAYLOAD" ".response" "recent reply"
+
+{ prompt_line "far prompt"; filler_mb 10; reply_line "far reply"; } > "$TAIL_TMP/far.jsonl"
+assert_json_field "prompt beyond the first window is found" "$(run_stop_hook "$TAIL_TMP/far.jsonl")" ".query" "far prompt"
+
+# The Stop hook must not hold the whole transcript in memory. Linux enforces
+# ulimit -v; skip where it does not (macOS).
+if (ulimit -v 131072) 2>/dev/null; then
+    { filler_mb 100; prompt_line "bounded prompt"; reply_line "bounded reply"; } > "$TAIL_TMP/huge.jsonl"
+    PAYLOAD=$(ulimit -v 131072; run_stop_hook "$TAIL_TMP/huge.jsonl")
+    assert_json_field "100 MB transcript fits in 128 MB" "$PAYLOAD" ".query" "bounded prompt"
+else
+    echo "  - memory bound check skipped (ulimit -v not enforced here)"
+fi
 
 # --- Summary ---
 
