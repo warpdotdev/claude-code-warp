@@ -68,7 +68,12 @@ fi
 # Claude Code wakes the agent again when a background task finishes or a session cron fires,
 # so a Stop with either pending is a pause rather than the end of the session. Default to 0
 # so --argjson always receives a number and the notification is never dropped.
-BACKGROUND_TASK_COUNT=$(echo "$INPUT" | jq -r '.background_tasks // [] | length' 2>/dev/null)
+#
+# Teammates are counted apart: background_tasks lists a teammate as "running" even while it
+# sits idle, and an idle teammate never wakes the agent. Non-objects are type-checked first
+# because `.type` on a string aborts jq and would zero the whole count.
+BACKGROUND_TASK_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | select(type != "object" or .type != "teammate")] | length' 2>/dev/null)
+TEAMMATE_COUNT=$(echo "$INPUT" | jq -r '[.background_tasks // [] | .[] | select(type == "object" and .type == "teammate")] | length' 2>/dev/null)
 SESSION_CRON_COUNT=$(echo "$INPUT" | jq -r '.session_crons // [] | length' 2>/dev/null)
 
 BODY=$(build_payload "$INPUT" "stop" \
@@ -76,6 +81,7 @@ BODY=$(build_payload "$INPUT" "stop" \
     --arg response "$RESPONSE" \
     --arg transcript_path "$TRANSCRIPT_PATH" \
     --argjson background_task_count "${BACKGROUND_TASK_COUNT:-0}" \
+    --argjson teammate_count "${TEAMMATE_COUNT:-0}" \
     --argjson session_cron_count "${SESSION_CRON_COUNT:-0}")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"

@@ -56,7 +56,7 @@ MARKETPLACE_VERSION=$(jq -r '.plugins[] | select(.name == "warp") | .version' \
     "$REPO_DIR/.claude-plugin/marketplace.json")
 NOTIFICATION_MATCHER=$(jq -r '.hooks.Notification[0].matcher' "$PLUGIN_DIR/hooks/hooks.json")
 
-assert_eq "plugin version bumped" "2.4.0" "$PLUGIN_VERSION"
+assert_eq "plugin version bumped" "2.5.0" "$PLUGIN_VERSION"
 assert_eq "marketplace version matches plugin" "$PLUGIN_VERSION" "$MARKETPLACE_VERSION"
 assert_eq "notification matcher includes input-required events" \
     "idle_prompt|agent_needs_input" \
@@ -319,6 +319,50 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
+
+echo ""
+echo "--- Stop pending-work counts ---"
+
+# Prints the payload on-stop.sh sends to Warp for the hook input in $1
+stop_payload() {
+    local seq
+    seq=$(echo "$1" | WARP_CLI_AGENT_PROTOCOL_VERSION=1 WARP_CLIENT_VERSION="v0.2026.09.01.00.00.dev_00" \
+        CLAUDE_CODE_VERSION="2.1.200" bash "$HOOK_DIR/on-stop.sh" 2>/dev/null | jq -r '.terminalSequence // empty')
+    seq="${seq#*warp://cli-agent;}"
+    printf '%s' "${seq%$'\a'}"
+}
+
+TEAMMATE='{"id":"t1","type":"teammate","status":"running","description":"review"}'
+SUBAGENT='{"id":"a1","type":"subagent","status":"running","description":"explore","agent_type":"Explore"}'
+SHELL_TASK='{"id":"b1","type":"shell","status":"running","description":"tail","command":"tail -f log"}'
+
+PAYLOAD=$(stop_payload "{\"session_id\":\"s1\",\"cwd\":\"/tmp/p\",\"background_tasks\":[$TEAMMATE,${TEAMMATE/t1/t2}]}")
+assert_json_field "only teammates: no background tasks pending" "$PAYLOAD" ".background_task_count" "0"
+assert_json_field "only teammates: teammates counted apart" "$PAYLOAD" ".teammate_count" "2"
+
+PAYLOAD=$(stop_payload "{\"session_id\":\"s1\",\"cwd\":\"/tmp/p\",\"background_tasks\":[$SUBAGENT,$SHELL_TASK]}")
+assert_json_field "subagent and shell still counted" "$PAYLOAD" ".background_task_count" "2"
+assert_json_field "no teammates counted without teammates" "$PAYLOAD" ".teammate_count" "0"
+
+PAYLOAD=$(stop_payload "{\"session_id\":\"s1\",\"cwd\":\"/tmp/p\",\"background_tasks\":[$TEAMMATE,$SUBAGENT,${TEAMMATE/t1/t2},$SHELL_TASK],\"session_crons\":[{\"id\":\"c1\",\"schedule\":\"* * * * *\"}]}")
+assert_json_field "mixed list: teammates left out of background tasks" "$PAYLOAD" ".background_task_count" "2"
+assert_json_field "mixed list: teammate_count" "$PAYLOAD" ".teammate_count" "2"
+assert_json_field "mixed list: session_cron_count unchanged" "$PAYLOAD" ".session_cron_count" "1"
+
+PAYLOAD=$(stop_payload "{\"session_id\":\"s1\",\"cwd\":\"/tmp/p\",\"background_tasks\":[$SHELL_TASK,\"x\",$TEAMMATE]}")
+assert_json_field "non-object entry: other tasks still counted" "$PAYLOAD" ".background_task_count" "2"
+assert_json_field "non-object entry: teammate_count" "$PAYLOAD" ".teammate_count" "1"
+
+PAYLOAD=$(stop_payload '{"session_id":"s1","cwd":"/tmp/p"}')
+assert_json_field "missing background_tasks: stop still sent" "$PAYLOAD" ".event" "stop"
+assert_json_field "missing background_tasks: background_task_count is 0" "$PAYLOAD" ".background_task_count" "0"
+assert_json_field "missing background_tasks: teammate_count is 0" "$PAYLOAD" ".teammate_count" "0"
+assert_json_field "missing background_tasks: session_cron_count is 0" "$PAYLOAD" ".session_cron_count" "0"
+
+PAYLOAD=$(stop_payload '{"session_id":"s1","cwd":"/tmp/p","background_tasks":"abc"}')
+assert_json_field "non-array background_tasks: stop still sent" "$PAYLOAD" ".event" "stop"
+assert_json_field "non-array background_tasks: background_task_count is 0" "$PAYLOAD" ".background_task_count" "0"
+assert_json_field "non-array background_tasks: teammate_count is 0" "$PAYLOAD" ".teammate_count" "0"
 
 # --- Summary ---
 
