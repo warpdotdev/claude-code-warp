@@ -32,22 +32,22 @@ RESPONSE=""
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     # Get the last human prompt from the transcript.
     # "user" type messages include both human prompts and tool-result messages.
-    # Human prompts have content that is either a plain string or an array
-    # containing {type:"text"} blocks. Tool-result messages have content arrays
-    # containing only {type:"tool_result"} blocks. We filter to messages that
-    # have at least one "text" block (or are a plain string).
+    # We extract the joined text from each user message, then skip messages whose
+    # content is a synthetic system-injected tag (task-notification when a
+    # background subagent completes, system-reminder, slash-command wrappers, etc.).
+    # Without this filter, those raw XML payloads end up as the notification title.
     QUERY=$(jq -rs '
         [
             .[] | select(.type == "user") |
-            if .message.content | type == "string" then .
-            elif [.message.content[] | select(.type == "text")] | length > 0 then .
-            else empty
-            end
-        ] | last |
-        if .message.content | type == "array"
-        then [.message.content[] | select(.type == "text") | .text] | join(" ")
-        else .message.content // empty
-        end
+            (if .message.content | type == "string" then .message.content
+             elif .message.content | type == "array" then
+                 ([.message.content[]? | select(.type == "text") | .text] | join(" "))
+             else empty
+             end) as $text |
+            select(($text | length) > 0) |
+            select($text | test("^\\s*<(task-notification|system-reminder|command-message|command-name|command-args|local-command-stdout|user-prompt-submit-hook)\\b") | not) |
+            $text
+        ] | last // empty
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
 
     # Get the last assistant response
