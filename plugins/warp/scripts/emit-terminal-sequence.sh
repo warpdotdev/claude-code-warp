@@ -72,14 +72,24 @@ emit_terminal_sequence() {
             # Known-old Claude Code — /dev/tty is the only safe path.
             # Emitting terminalSequence here would be rejected by the Stop
             # hook validator as an unknown field.
-            printf '%s' "$seq" > /dev/tty 2>/dev/null || true
+            #
+            # The write is wrapped in a brace group before the redirect to
+            # /dev/null: when there's no controlling terminal, opening
+            # /dev/tty fails with ENXIO ("Device not configured") and bash
+            # reports that itself, to the *original* stderr — a bare
+            # `> /dev/tty 2>/dev/null` can't catch it because the failing
+            # redirect is set up before the `2>/dev/null` one. Grouping
+            # applies 2>/dev/null to the whole group first.
+            { printf '%s' "$seq" > /dev/tty; } 2>/dev/null || true
         fi
         return 0
     fi
 
     # Unknown Claude Code version — try /dev/tty, fall back to JSON
     # as a best-effort attempt for new CC without version detection.
-    if printf '%s' "$seq" > /dev/tty 2>/dev/null; then
+    # See the brace-group note above: it's needed here too, otherwise a
+    # missing controlling terminal leaks a raw bash error to the user.
+    if { printf '%s' "$seq" > /dev/tty; } 2>/dev/null; then
         return 0
     fi
     jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
