@@ -16,6 +16,7 @@ The plugin registers an Oz parent-message delivery bridge:
 
 The plugin ships skills the agent uses to talk to the Oz platform:
 - **oz-child-agent-orchestration** — coordinate with a lead run via the Oz CLI (`OZ_CLI`, `OZ_RUN_ID`, `OZ_PARENT_RUN_ID`)
+- **wait-for-events** — wait for agent events without completing the assigned task
 - **oz-finish-task** — report task completion or failure
 - **oz-notify-user** — send a progress notification to the triggering user
 - **oz-report-pr** — report a created pull request back to Oz
