@@ -11,14 +11,9 @@ OZ_PARENT_SURFACED_IDS=()
 read_hook_input() {
     cat
 }
-# Only child Claude runs have a lead-agent parent to bridge messages from.
-# When OZ_PARENT_RUN_ID is absent, leave the hooks inert so they do not affect
-# regular Oz harness sessions that are not running as child agents.
-
 oz_harness_available() {
     [ -n "${OZ_CLI:-}" ] &&
         [ -n "${OZ_RUN_ID:-}" ] &&
-        [ -n "${OZ_PARENT_RUN_ID:-}" ] &&
         command -v "$OZ_CLI" >/dev/null 2>&1
 }
 
@@ -39,7 +34,7 @@ session_id_from_input() {
 }
 
 state_root() {
-    printf '%s\n' "${OZ_PARENT_STATE_ROOT:-$HOME/.claude-code/oz-parent-bridge}"
+    printf '%s\n' "${OZ_MESSAGE_LISTENER_STATE_ROOT:-${OZ_PARENT_STATE_ROOT:-$HOME/.claude-code/oz-parent-bridge}}"
 }
 
 state_dir_from_session_id() {
@@ -265,7 +260,7 @@ ensure_last_sequence_file() {
 # driver's state directory instead of starting or cleaning up their own
 # listener lifecycle.
 listener_lifecycle_managed_externally() {
-    [ "${OZ_PARENT_LISTENER_MANAGED_EXTERNALLY:-0}" = "1" ]
+    [ "${OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY:-${OZ_PARENT_LISTENER_MANAGED_EXTERNALLY:-0}}" = "1" ]
 }
 
 load_hook_state() {
@@ -316,7 +311,7 @@ emit_stop_block_if_pending() {
     pending_count="$(wait_for_pending_parent_messages "$state_dir")" || return 1
     [ "$pending_count" -gt 0 ] || return 1
 
-    reason="There are ${pending_count} pending parent message(s) from the lead Oz run. Continue so the next safe boundary can surface them."
+    reason="There are ${pending_count} pending Oz coordination event(s). Continue so the next safe boundary can surface them."
     jq -nc --arg reason "$reason" '{decision:"block", reason:$reason}'
 }
 
@@ -327,20 +322,14 @@ mark_message_delivered() {
         true
 }
 
-remove_staged_message() {
-    local state_dir="$1"
-    local message_id="$2"
-    find "$(staged_dir "$state_dir")" -type f -name "*-${message_id}.json" -delete 2>/dev/null || true
-}
-
 build_parent_context_from_staged_messages() {
     local state_dir="$1"
     local max_context_chars="${2:-6000}"
     local staged_file total_staged=0
-    local message_id sender_run_id subject body sequence
+    local message_id sender_run_id subject body sequence event_type
     local block separator candidate remaining note
 
-    OZ_PARENT_RENDERED_CONTEXT=$'Lead-agent updates arrived from Oz. Treat the latest parent instructions below as authoritative.\n'
+    OZ_PARENT_RENDERED_CONTEXT=$'Oz coordination update. Mailbox messages are user-level coordination. Lifecycle notifications are read-only status, not instructions.\n'
     OZ_PARENT_REMAINING_COUNT=0
     OZ_PARENT_SURFACED_IDS=()
 
@@ -353,18 +342,23 @@ build_parent_context_from_staged_messages() {
         subject="$(json_file_field "$staged_file" '.subject')"
         body="$(json_file_field "$staged_file" '.body')"
         sequence="$(json_file_field "$staged_file" '.sequence')"
+        event_type="$(json_file_field "$staged_file" '.event_type')"
 
         [ -n "$message_id" ] || continue
         [ -n "$subject" ] || subject="(no subject)"
 
-        block=$'---\nParent message'
-        if [ -n "$sequence" ]; then
-            block="$block #$sequence"
+        if [ "$event_type" = "run_waited_on" ]; then
+            block=$'---\nRead-only lifecycle notification\n\n'"$body"
+        else
+            block=$'---\nMailbox message'
+            if [ -n "$sequence" ]; then
+                block="$block #$sequence"
+            fi
+            if [ -n "$sender_run_id" ]; then
+                block="$block from $sender_run_id"
+            fi
+            block="$block"$'\n'"Subject: $subject"$'\n\n'"$body"
         fi
-        if [ -n "$sender_run_id" ]; then
-            block="$block from $sender_run_id"
-        fi
-        block="$block"$'\n'"Subject: $subject"$'\n\n'"$body"
 
         separator=""
         if [ "${#OZ_PARENT_SURFACED_IDS[@]}" -gt 0 ]; then
@@ -392,7 +386,7 @@ build_parent_context_from_staged_messages() {
 
     OZ_PARENT_REMAINING_COUNT=$((total_staged - ${#OZ_PARENT_SURFACED_IDS[@]}))
     if [ "$OZ_PARENT_REMAINING_COUNT" -gt 0 ]; then
-        note=$'\n\nMore parent messages are still staged and will be surfaced on a later turn.'
+        note=$'\n\nMore Oz coordination events are still staged and will be surfaced on a later turn.'
         if [ $(( ${#OZ_PARENT_RENDERED_CONTEXT} + ${#note} )) -le "$max_context_chars" ]; then
             OZ_PARENT_RENDERED_CONTEXT="${OZ_PARENT_RENDERED_CONTEXT}${note}"
         fi
@@ -404,9 +398,15 @@ deliver_and_remove_staged_messages() {
     local message_id
     shift
 
+    local staged_file event_type
     for message_id in "$@"; do
-        mark_message_delivered "$message_id"
-        remove_staged_message "$state_dir" "$message_id"
+        while IFS= read -r staged_file; do
+            event_type="$(json_file_field "$staged_file" '.event_type')"
+            if [ "$event_type" != "run_waited_on" ]; then
+                mark_message_delivered "$message_id"
+            fi
+            rm -f "$staged_file"
+        done < <(find "$(staged_dir "$state_dir")" -type f -name "*-${message_id}.json" -print)
     done
 }
 

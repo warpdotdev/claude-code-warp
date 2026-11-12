@@ -137,7 +137,7 @@ EOF
 
 OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-stop.sh")
 assert_json_field "stop blocks when staged messages remain" "$OUTPUT" ".decision" "block"
-assert_contains "stop reason references pending parent messages" "$OUTPUT" "pending parent message"
+assert_contains "stop reason references pending Oz coordination events" "$OUTPUT" "pending Oz coordination event"
 
 rm -f "$STATE_DIR/staged/"*.json
 OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-stop.sh")
@@ -152,19 +152,54 @@ assert_eq "session end emits no output" "" "$OUTPUT"
 assert_eq "session end removes state directory" "false" "$([ -d "$STATE_DIR" ] && echo true || echo false)"
 
 echo ""
-echo "=== non-child sessions are ignored ==="
+echo "=== root lifecycle delivery ==="
 rm -rf "$STATE_DIR"
+: >"$FAKE_OZ_LOG"
 unset OZ_PARENT_RUN_ID
+cat >"$FAKE_OZ_WATCH" <<'EOF'
+{"event_type":"run_waited_on","sequence":101,"message_id":"synthetic-wait","sender_run_id":"child-waiter","subject":"","body":"Run child-waiter is waiting for you","occurred_at":"2026-11-12T00:00:00Z"}
+{"sequence":102,"message_id":"mailbox-update","sender_run_id":"child-run","subject":"Update","body":"Ordinary mailbox message.","occurred_at":"2026-11-12T00:00:01Z"}
+EOF
+bash "$SCRIPT_DIR/oz-parent-listener.sh" "$STATE_DIR"
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/drain-mailbox.sh" PostToolUse)
+assert_contains "root notification names the waiter" "$OUTPUT" "Run child-waiter is waiting for you"
+assert_contains "root notification is read-only" "$OUTPUT" "Read-only lifecycle notification"
+assert_contains "root preserves ordinary messages" "$OUTPUT" "Ordinary mailbox message."
+assert_eq "root notification has no parent authority" "false" "$(printf '%s' "$OUTPUT" | grep -q authoritative && echo true || echo false)"
+assert_eq "synthetic notification is never marked delivered" "false" "$(grep -q 'delivered synthetic-wait' "$FAKE_OZ_LOG" && echo true || echo false)"
+assert_contains "ordinary mailbox message is marked delivered" "$(cat "$FAKE_OZ_LOG")" "mark-delivered mailbox-update"
+assert_eq "root records are removed after drain" "0" "$(find "$STATE_DIR/staged" -name '*.json' | wc -l | tr -d ' ')"
+bash "$SCRIPT_DIR/oz-parent-listener.sh" "$STATE_DIR"
+assert_eq "reconnect does not replay consumed notifications" "0" "$(find "$STATE_DIR/staged" -name '*.json' | wc -l | tr -d ' ')"
+assert_eq "root notification cursor advances" "102" "$(cat "$STATE_DIR/last-sequence")"
+mkdir -p "$STATE_DIR/surfaced"
+export OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY=1
+export OZ_MESSAGE_LISTENER_STATE_ROOT="$STATE_ROOT"
+cat >"$STATE_DIR/pending-hook-output.json" <<'EOF'
+{"additional_context":"Read-only lifecycle notification: Run child-waiter is waiting for you","remaining_staged_count":0,"surfaced_count":1}
+EOF
 OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-session-start.sh")
-assert_eq "non-child session start emits no output" "" "$OUTPUT"
-assert_eq "non-child session start does not create state directory" "false" "$([ -d "$STATE_DIR" ] && echo true || echo false)"
-OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/drain-mailbox.sh" UserPromptSubmit)
-assert_eq "non-child drain emits no output" "" "$OUTPUT"
-OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-stop.sh")
-assert_eq "non-child stop emits no output" "" "$OUTPUT"
-OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-session-end.sh")
-assert_eq "non-child session end emits no output" "" "$OUTPUT"
+assert_eq "managed root does not launch legacy listener" "false" "$([ -f "$STATE_DIR/listener.pid" ] && echo true || echo false)"
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/drain-mailbox.sh" PostToolUse)
+assert_contains "managed root surfaces driver lifecycle context" "$OUTPUT" "Run child-waiter is waiting for you"
+assert_eq "managed root acknowledges local driver output" "true" "$([ -f "$STATE_DIR/pending-hook-output.ack" ] && echo true || echo false)"
+unset OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY OZ_MESSAGE_LISTENER_STATE_ROOT
 export OZ_PARENT_RUN_ID="parent-run-456"
+rm -rf "$STATE_DIR"
+
+echo "=== non-Oz sessions are ignored ==="
+rm -rf "$STATE_DIR"
+unset OZ_RUN_ID
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-session-start.sh")
+assert_eq "non-Oz session start emits no output" "" "$OUTPUT"
+assert_eq "non-Oz session start does not create state directory" "false" "$([ -d "$STATE_DIR" ] && echo true || echo false)"
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/drain-mailbox.sh" UserPromptSubmit)
+assert_eq "non-Oz drain emits no output" "" "$OUTPUT"
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-stop.sh")
+assert_eq "non-Oz stop emits no output" "" "$OUTPUT"
+OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-session-end.sh")
+assert_eq "non-Oz session end emits no output" "" "$OUTPUT"
+export OZ_RUN_ID="child-run-123"
 
 echo ""
 echo "=== externally managed lifecycle and drain ==="
@@ -215,7 +250,7 @@ linger_writer_pid=$!
 OUTPUT=$(printf '%s' "$HOOK_INPUT" | bash "$SCRIPT_DIR/on-stop.sh")
 wait "$linger_writer_pid"
 assert_json_field "externally managed stop lingers for late-arriving staged messages" "$OUTPUT" ".decision" "block"
-assert_contains "externally managed linger reason references pending parent messages" "$OUTPUT" "pending parent message"
+assert_contains "externally managed linger reason references pending Oz coordination events" "$OUTPUT" "pending Oz coordination event"
 unset OZ_PARENT_STOP_LINGER_ATTEMPTS
 unset OZ_PARENT_STOP_LINGER_POLL_SECONDS
 
