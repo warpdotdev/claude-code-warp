@@ -6,11 +6,16 @@ This plugin is installed automatically in Oz cloud agent environments — there 
 
 ## Hooks
 
-The plugin registers an Oz parent-message delivery bridge:
-- **SessionStart** — starts the parent-message listener for the run
-- **UserPromptSubmit** / **PostToolUse** — drain the mailbox, surfacing queued parent messages into the session as additional context
-- **Stop** — keeps the session active when parent messages are still pending delivery
+The plugin registers an Oz coordination bridge for both root and child runs:
+- **SessionStart** — starts the run's event listener, or reuses the Warp-managed bridge
+- **UserPromptSubmit** / **PostToolUse** — surface queued mailbox messages and read-only lifecycle notifications as additional context
+- **Stop** — keeps the session active when coordination events are still pending delivery
 - **SessionEnd** — tears down the listener and cleans up hook state
+
+`run_waited_on` notifications say “Run {id} is waiting for you,” where the ID identifies
+the waiting run, not necessarily a parent. They are status metadata, not instructions,
+and are never acknowledged through mailbox delivery APIs. Hooks require `OZ_CLI` and
+`OZ_RUN_ID`; they remain inert outside Oz.
 
 ## Skills
 

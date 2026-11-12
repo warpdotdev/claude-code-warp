@@ -10,12 +10,14 @@ STATE_DIR="${1:?state directory is required}"
 stage_message_from_watch_record() {
     local state_dir="$1"
     local line="$2"
-    local sequence message_id target
+    local sequence message_id target previous_sequence
 
     sequence="$(json_field "$line" '.sequence')"
     message_id="$(json_field "$line" '.message_id')"
 
-    [ -n "$sequence" ] || return 0
+    [[ "$sequence" =~ ^[0-9]+$ ]] || return 0
+    previous_sequence="$(cat "$(last_sequence_file "$state_dir")" 2>/dev/null || true)"
+    [ "$sequence" -gt "${previous_sequence:-0}" ] || return 0
     [ -n "$message_id" ] || return 0
 
     target="$(staged_message_path "$state_dir" "$sequence" "$message_id")"
