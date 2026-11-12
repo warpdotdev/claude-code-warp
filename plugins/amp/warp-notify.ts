@@ -1,4 +1,4 @@
-// @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
+import { writeFileSync } from 'node:fs'
 import type { PluginAPI } from '@ampcode/plugin'
 
 function shouldUseStructured(): boolean {
@@ -21,8 +21,7 @@ function warpNotify(payload: Record<string, unknown>): void {
 	if (!shouldUseStructured()) return
 	const body = JSON.stringify(payload)
 	try {
-		const fs = require('fs')
-		fs.writeFileSync('/dev/tty', `\x1b]777;notify;warp://cli-agent;${body}\x07`)
+		writeFileSync('/dev/tty', `\x1b]777;notify;warp://cli-agent;${body}\x07`)
 	} catch {}
 }
 

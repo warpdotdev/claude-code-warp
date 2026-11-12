@@ -4,41 +4,27 @@ Warp terminal integration for [Amp](https://ampcode.com) — the coding agent by
 
 ## Installation
 
-Copy the plugin file to Amp's global plugins directory:
+Copy the plugin file to Amp's system plugins directory (`$XDG_CONFIG_HOME/amp/plugins/` if `XDG_CONFIG_HOME` is set):
 
 ```bash
+mkdir -p ~/.config/amp/plugins
 cp plugins/amp/warp-notify.ts ~/.config/amp/plugins/warp-notify.ts
 ```
 
-Then run Amp with plugins enabled:
-
-```bash
-PLUGINS=all amp
-```
-
-To enable permanently, add to your shell profile:
-
-```bash
-echo 'export PLUGINS=all' >> ~/.zshrc
-```
+To enable it for a single project instead, copy it to `.amp/plugins/` at the project root. Run `plugins: reload` from the command palette to load it into a running thread.
 
 ## Verify
 
 ```bash
-PLUGINS=all amp plugins list
+amp plugins list
 ```
 
-You should see:
-```
-✓ /Users/you/.config/amp/plugins/warp-notify.ts active
-  Events: session.start, agent.start, tool.call, tool.result, agent.end
-```
+The list should include `warp-notify.ts` with the events `session.start`, `agent.start`, `tool.call`, `tool.result` and `agent.end`.
 
 ## Requirements
 
 - [Warp terminal](https://warp.dev)
-- [Amp CLI](https://ampcode.com) (binary install, not npm)
-- `PLUGINS=all` environment variable
+- [Amp CLI](https://ampcode.com)
 
 ## How It Works
 
