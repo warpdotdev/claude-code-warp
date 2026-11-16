@@ -27,6 +27,11 @@ negotiate_protocol_version() {
     fi
 }
 
+# Agent slug reported to Warp in the payload's `agent` field. Defaults to
+# "claude" (Claude Code). Harnesses that reuse these hook scripts under a
+# different CLI agent — e.g. plank (https://github.com/aovestdipaperino/plank),
+# which speaks the same warp://cli-agent protocol — set WARP_CLI_AGENT_NAME
+# to their own slug so Warp attributes sessions and notifications correctly.
 build_payload() {
     local input="$1"
     local event="$2"
@@ -48,7 +53,7 @@ build_payload() {
     # Extra args should be jq flag pairs like: --arg key "value" or --argjson key '{"a":1}'
     jq -nc \
         --argjson v "$protocol_version" \
-        --arg agent "claude" \
+        --arg agent "${WARP_CLI_AGENT_NAME:-claude}" \
         --arg event "$event" \
         --arg session_id "$session_id" \
         --arg cwd "$cwd" \
