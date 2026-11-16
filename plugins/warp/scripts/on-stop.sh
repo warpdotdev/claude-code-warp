@@ -36,18 +36,32 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     # containing {type:"text"} blocks. Tool-result messages have content arrays
     # containing only {type:"tool_result"} blocks. We filter to messages that
     # have at least one "text" block (or are a plain string).
+    # "user" entries are not only what the human typed. Background-task
+    # notifications, blocking-hook feedback, system reminders and messages from
+    # other sessions arrive under the same type, and taking the last one made
+    # notifications read "'<task-notification>\n<task...' finished". Image-only
+    # messages carry just "[Image: source: /path]", which titled the
+    # notification with a file path.
     QUERY=$(jq -rs '
-        [
-            .[] | select(.type == "user") |
-            if .message.content | type == "string" then .
-            elif [.message.content[] | select(.type == "text")] | length > 0 then .
-            else empty
-            end
-        ] | last |
-        if .message.content | type == "array"
-        then [.message.content[] | select(.type == "text") | .text] | join(" ")
-        else .message.content // empty
-        end
+        def text: (if .message.content | type == "string"
+                   then .message.content
+                   else ([.message.content[]? | select(.type == "text") | .text] | join(" "))
+                   end)
+                  | gsub("\\[Image[^\\]]*\\]"; "")
+                  | gsub("^\\s+|\\s+$"; "");
+        def synthetic: startswith("<")                       # <task-notification>, <system-reminder>,
+                                                             # <local-command-stdout>, <command-name>
+                    or startswith("Stop hook feedback:")
+                    or startswith("Another Claude session sent a message")
+                    or startswith("[Request interrupted")
+                    or startswith("Caveat:");
+        [ .[]
+          | select(.type == "user")
+          | select(has("isSidechain") and .isSidechain | not)
+          | text
+          | select(. != null and . != "")
+          | select(synthetic | not)
+        ] | last // ""
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
 
     # Get the last assistant response
