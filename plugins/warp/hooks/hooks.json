@@ -1,5 +1,4 @@
 {
-  "description": "Warp terminal notifications",
   "hooks": {
     "SessionStart": [
       {
