@@ -28,7 +28,9 @@ fi
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 sleep 0.3
 QUERY=""
-RESPONSE=""
+# Claude Code passes the final reply in the hook input. Prefer it: the transcript
+# often lacks the last text block when the hook runs, even after the delay above.
+RESPONSE=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     # Get the last human prompt from the transcript.
     # "user" type messages include both human prompts and tool-result messages.
@@ -50,19 +52,21 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
         end
     ' "$TRANSCRIPT_PATH" 2>/dev/null)
 
-    # Get the last assistant response
-    RESPONSE=$(jq -rs '
-        [.[] | select(.type == "assistant" and .message.content)] | last |
-        [.message.content[] | select(.type == "text") | .text] | join(" ")
-    ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    # Get the last assistant response (older Claude Code without last_assistant_message)
+    if [ -z "$RESPONSE" ]; then
+        RESPONSE=$(jq -rs '
+            [.[] | select(.type == "assistant" and .message.content)] | last |
+            [.message.content[] | select(.type == "text") | .text] | join(" ")
+        ' "$TRANSCRIPT_PATH" 2>/dev/null)
+    fi
 
     # Truncate for notification display
     if [ -n "$QUERY" ] && [ ${#QUERY} -gt 200 ]; then
         QUERY="${QUERY:0:197}..."
     fi
-    if [ -n "$RESPONSE" ] && [ ${#RESPONSE} -gt 200 ]; then
-        RESPONSE="${RESPONSE:0:197}..."
-    fi
+fi
+if [ -n "$RESPONSE" ] && [ ${#RESPONSE} -gt 200 ]; then
+    RESPONSE="${RESPONSE:0:197}..."
 fi
 
 # Claude Code wakes the agent again when a background task finishes or a session cron fires,
