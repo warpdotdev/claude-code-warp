@@ -320,6 +320,59 @@ for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
 
+echo ""
+echo "--- Stop response ---"
+
+# Runs on-stop.sh as a modern Warp + Claude Code would, and prints the
+# structured payload it sends to Warp.
+run_stop_hook() {
+    local input="$1"
+    WARP_CLI_AGENT_PROTOCOL_VERSION=1 \
+    WARP_CLIENT_VERSION=v0.2026.10.21.08.25.stable_02 \
+    CLAUDE_CODE_VERSION=2.1.327 \
+        bash "$HOOK_DIR/on-stop.sh" <<< "$input" 2>/dev/null \
+        | jq -r '.terminalSequence' \
+        | sed 's/^.*warp:\/\/cli-agent;//' | tr -d '\a'
+}
+
+STOP_TMP=$(mktemp -d)
+trap 'rm -rf "$STOP_TMP"' EXIT
+
+# Claude Code can fire Stop before the final assistant text reaches the
+# transcript: the file ends on a thinking-only entry.
+cat > "$STOP_TMP/unflushed.jsonl" <<'EOF'
+{"type":"user","message":{"role":"user","content":"add the footer"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"..."}]}}
+EOF
+
+INPUT=$(jq -nc --arg t "$STOP_TMP/unflushed.jsonl" \
+    '{session_id:"s1", cwd:"/tmp/proj", transcript_path:$t, last_assistant_message:"Footer added on slides 8 and 9."}')
+PAYLOAD=$(run_stop_hook "$INPUT")
+assert_json_field "response comes from last_assistant_message when the transcript lags" \
+    "$PAYLOAD" '.response' "Footer added on slides 8 and 9."
+assert_json_field "query still comes from the transcript" \
+    "$PAYLOAD" '.query' "add the footer"
+
+# Older Claude Code without last_assistant_message: keep reading the transcript.
+cat > "$STOP_TMP/flushed.jsonl" <<'EOF'
+{"type":"user","message":{"role":"user","content":"add the footer"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done from transcript."}]}}
+EOF
+
+INPUT=$(jq -nc --arg t "$STOP_TMP/flushed.jsonl" \
+    '{session_id:"s1", cwd:"/tmp/proj", transcript_path:$t}')
+PAYLOAD=$(run_stop_hook "$INPUT")
+assert_json_field "response falls back to the transcript without last_assistant_message" \
+    "$PAYLOAD" '.response' "Done from transcript."
+
+# The hook field is truncated like the transcript value.
+LONG=$(printf 'x%.0s' $(seq 1 250))
+INPUT=$(jq -nc --arg t "$STOP_TMP/unflushed.jsonl" --arg m "$LONG" \
+    '{session_id:"s1", cwd:"/tmp/proj", transcript_path:$t, last_assistant_message:$m}')
+PAYLOAD=$(run_stop_hook "$INPUT")
+assert_json_field "response from last_assistant_message is truncated to 200 chars" \
+    "$PAYLOAD" '.response | length' "200"
+
 # --- Summary ---
 
 echo ""
